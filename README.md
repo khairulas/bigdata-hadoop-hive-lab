@@ -19,7 +19,7 @@ A fully containerized Big Data environment for teaching Hadoop HDFS, Apache Hive
 
 2.  **Navigate to the Directory**
     ```bash
-    cd bigdata-hive-lab
+    cd bigdata-hadoop-hive-lab
     ```
 
 
@@ -200,7 +200,7 @@ We will use the built-in Hadoop example JAR to run the `wordcount` program. We u
 
 ```bash
 # Run this inside the NameNode shell
-yarn jar /opt/hadoop-3.2.1/share/hadoop/mapreduce/hadoop-mapreduce-examples-3.2.1.jar wordcount /user/mapreduce/input /user/mapreduce/outpu
+yarn jar /opt/hadoop-3.2.1/share/hadoop/mapreduce/hadoop-mapreduce-examples-3.2.1.jar wordcount /user/mapreduce/input /user/mapreduce/output
 ```
 
 *Note: If the output directory `/user/mapreduce/output` already exists, the job will fail. You must delete it first using `hdfs dfs -rm -r /user/mapreduce/output`.*
