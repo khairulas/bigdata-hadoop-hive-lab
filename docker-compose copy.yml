@@ -1,0 +1,117 @@
+version: '3'
+
+services:
+  # --- STORAGE LAYER (HDFS) ---
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    restart: always
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+    environment:
+      - CLUSTER_NAME=test
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - CORE_CONF_hadoop_proxyuser_hue_hosts=*
+      - CORE_CONF_hadoop_proxyuser_hue_groups=*
+      - HDFS_CONF_dfs_webhdfs_enabled=true
+    volumes:
+      # PERSIST HDFS METADATA (The File System Index)
+      - ./namenode_data:/hadoop/dfs/name
+    networks:
+      - bigdata-net
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    restart: always
+    environment:
+      - SERVICE_PRECONDITION=namenode:9870
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    depends_on:
+      - namenode
+    volumes:
+      # PERSIST HDFS BLOCKS (The Actual Data)
+      - ./datanode_data:/hadoop/dfs/data
+    networks:
+      - bigdata-net
+
+  # --- METADATA LAYER (PostgreSQL) ---
+  postgres:
+    image: postgres:13
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_DB: metastore
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hive
+    volumes:
+      # PERSIST HIVE SCHEMA (The Table Definitions)
+      - ./postgres_data:/var/lib/postgresql/data
+      - ./init-hive-db.sql:/docker-entrypoint-initdb.d/init-hive-db.sql
+    networks:
+      - bigdata-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hive"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- COMPUTE LAYER (Hive) ---
+  hive-server:
+    image: apache/hive:4.0.0
+    container_name: hive-server
+    restart: always
+    ports:
+      - "10000:10000"
+      - "10002:10002"
+    environment:
+      SERVICE_NAME: hiveserver2
+      HADOOP_HEAPSIZE: 2048
+      # We don't need SKIP_SCHEMA_INIT anymore because we are bypassing the script that uses it
+    volumes:
+      - ./hive-site.xml:/opt/hive/conf/hive-site.xml
+      - ./lib/postgresql-42.7.4.jar:/opt/hive/lib/postgresql-42.7.4.jar
+      - ./data/hive_home:/home/hive
+    depends_on:
+      namenode:
+        condition: service_started
+      datanode:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    networks:
+      - bigdata-net
+    
+    # --- CRITICAL FIX: Override the entrypoint to bypass the buggy default script ---
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        echo "1. Waiting 15s for Postgres..."
+        sleep 15
+        echo "2. Initializing Postgres Metastore Schema..."
+        /opt/hive/bin/schematool -dbType postgres -initOrUpgradeSchema --verbose
+        echo "3. Starting HiveServer2..."
+        /opt/hive/bin/hiveserver2
+
+  # --- UI LAYER (Hue) ---
+  hue:
+    image: gethue/hue:latest
+    container_name: hue
+    restart: always
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./hue.ini:/usr/share/hue/desktop/conf/z-hue.ini
+    depends_on:
+      namenode:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    networks:
+      - bigdata-net
+
+networks:
+  bigdata-net:
+    driver: bridge
