@@ -14,7 +14,6 @@ services:
       - CORE_CONF_hadoop_proxyuser_hue_groups=*
       - HDFS_CONF_dfs_webhdfs_enabled=true
     volumes:
-      # PERSIST HDFS METADATA (The File System Index)
       - ./namenode_data:/hadoop/dfs/name
     networks:
       - bigdata-net
@@ -90,12 +89,15 @@ services:
         sleep 15
         echo "2. Initializing Postgres Metastore Schema..."
         /opt/hive/bin/schematool -dbType postgres -initOrUpgradeSchema --verbose
-        echo "3. Setting HDFS permissions..."
-        HADOOP_USER_NAME=root hdfs dfs -chmod 777 /
-        echo "4. Starting HiveServer2..."
+        echo "3. Waiting for HDFS to be fully online and out of safe mode..."
+        # Add the -fs flag here
+        until hdfs dfsadmin -fs hdfs://namenode:9000 -safemode wait; do sleep 2; done;
+        echo "4. Setting HDFS root permissions..."
+        # And add the -fs flag here
+        HADOOP_USER_NAME=root hdfs dfs -fs hdfs://namenode:9000 -chmod 777 /
+        echo "5. Starting HiveServer2..."
         /opt/hive/bin/hiveserver2
 
-  # --- UI LAYER (Hue) ---
   # --- UI LAYER (Hue) ---
   hue:
     image: gethue/hue:latest
