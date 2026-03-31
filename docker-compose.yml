@@ -1,5 +1,3 @@
-version: '3'
-
 services:
   # --- STORAGE LAYER (HDFS) ---
   namenode:
@@ -96,6 +94,7 @@ services:
         /opt/hive/bin/hiveserver2
 
   # --- UI LAYER (Hue) ---
+  # --- UI LAYER (Hue) ---
   hue:
     image: gethue/hue:latest
     container_name: hue
@@ -111,6 +110,16 @@ services:
         condition: service_healthy
     networks:
       - bigdata-net
+    # --- AUTOMATED MIGRATION FIX ---
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        echo "1. Running Hue database migrations..."
+        ./build/env/bin/hue syncdb --noinput
+        ./build/env/bin/hue migrate
+        echo "2. Starting Hue Server..."
+        ./startup.sh
 
 networks:
   bigdata-net:
