@@ -90,7 +90,9 @@ services:
         sleep 15
         echo "2. Initializing Postgres Metastore Schema..."
         /opt/hive/bin/schematool -dbType postgres -initOrUpgradeSchema --verbose
-        echo "3. Starting HiveServer2..."
+        echo "3. Setting HDFS permissions..."
+        HADOOP_USER_NAME=root hdfs dfs -chmod 777 /
+        echo "4. Starting HiveServer2..."
         /opt/hive/bin/hiveserver2
 
   # --- UI LAYER (Hue) ---
