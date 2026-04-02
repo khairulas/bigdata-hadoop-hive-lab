@@ -54,6 +54,34 @@ Access the Hive SQL CLI (Beeline) using this command:
 ```bash
 docker exec -it hive-server beeline -u jdbc:hive2://localhost:10000
 ```
+Once connected, you will see the jdbc:hive2://localhost:10000> prompt. You can test your connection by running:
+
+```SQL
+-- Show all databases
+SHOW DATABASES;
+
+-- Switch to the default database
+USE default;
+
+-- View all tables
+SHOW TABLES;
+
+-- Exit Beeline when finished
+!quit
+```
+
+### 5: Using Hue (Web UI)
+Hue is the easiest way to browse HDFS files, write SQL queries, and visualize your data.
+
+Open your web browser and navigate to: http://localhost:8888
+
+First-time login: The first username and password you enter will automatically become the administrator account for Hue. (A common convention for labs is to use hive for both the username and password).
+
+Click on the Editor icon on the left sidebar and select Hive to start writing SQL queries.
+
+Click on the File Browser (folder icon) to visually navigate HDFS directories and upload files.
+
+⚠️ Important Note on Hue's Cache: If you create a table via Beeline or a script, it might not immediately show up in Hue's left-hand table browser. Click the small Refresh icon next to your database name in Hue to flush its cache and fetch the latest tables from the Hive Metastore.
 
 -----
 
