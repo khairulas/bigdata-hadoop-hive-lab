@@ -225,6 +225,89 @@ SQL     1
 ...
 ```
 
+***
+
+## 📂 Loading and Querying Data
+
+Because Hive is a compute engine, it does not store data directly on your local hard drive. Instead, it reads data distributed across the Hadoop Distributed File System (HDFS). 
+
+To analyze data, you must first move it from your local machine, into the Docker container, and finally into HDFS.
+
+### 1. Loading the Sample Training Data
+The `training` folder provided in this repository is already mapped to the Hive container at `/home/hive/training`. To load it into HDFS for analysis, follow these steps:
+
+**Step 1: Open a terminal inside the Hive container**
+```bash
+docker exec -it hive-server bash
+```
+
+**Step 2: Create a directory in HDFS to hold your data**
+*(Note: We use the `-fs` flag to ensure the command routes properly to the NameNode)*
+```bash
+hdfs dfs -fs hdfs://namenode:9000 -mkdir -p /user/hive/data/
+```
+
+**Step 3: Upload the training folder into HDFS**
+```bash
+hdfs dfs -fs hdfs://namenode:9000 -put /home/hive/training /user/hive/data/
+```
+
+**Step 4: Verify the upload was successful**
+```bash
+hdfs dfs -fs hdfs://namenode:9000 -ls /user/hive/data/training/data
+```
+
+---
+
+### 2. Querying the Data in Hive
+Once the data is in HDFS, you can create External Tables in Hive to query it. 
+
+**Important Note:** Hive `LOCATION` paths must point to a **directory**, not an individual file. If you want to query `accounts.csv`, it is best practice to put it in its own isolated folder within HDFS first.
+
+**Example: Creating a table via Beeline or Hue**
+```sql
+-- Create a table pointing to the HDFS directory
+CREATE EXTERNAL TABLE IF NOT EXISTS accounts (
+    account_id INT,
+    account_name STRING,
+    balance DOUBLE
+)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+STORED AS TEXTFILE
+LOCATION '/user/hive/data/training/data/accounts_folder'; 
+-- (Ensure your CSV is isolated in this folder)
+
+-- Query the data
+SELECT * FROM accounts LIMIT 10;
+```
+
+---
+
+### 3. Loading Your Own Custom Data
+When you are ready to use your own datasets, you have two easy methods to get them into HDFS.
+
+#### Method A: The Shared Volume (Recommended)
+Your `docker-compose.yml` is already configured with a shared volume mapping: `./data/hive_home:/home/hive`.
+1. On your host machine (Windows/Mac/Linux), drag and drop your data files into the local `./data/hive_home` folder inside your project directory.
+2. The files will instantly appear inside the `hive-server` container at `/home/hive/`.
+3. Jump into the container and move them to HDFS:
+   ```bash
+   docker exec -it hive-server bash
+   hdfs dfs -fs hdfs://namenode:9000 -mkdir -p /user/hive/my_custom_data/
+   hdfs dfs -fs hdfs://namenode:9000 -put /home/hive/my_dataset.csv /user/hive/my_custom_data/
+   ```
+
+#### Method B: Docker Copy (`docker cp`)
+If you want to copy files from anywhere on your computer without using the shared folder, you can use the `docker cp` command from your host machine's terminal:
+```bash
+# 1. Copy the file from your computer into the container
+docker cp C:\path\to\your\data.csv hive-server:/home/hive/data.csv
+
+# 2. Execute the HDFS put command to move it into Hadoop
+docker exec -it hive-server bash -c "hdfs dfs -fs hdfs://namenode:9000 -mkdir -p /user/hive/custom_data/ && hdfs dfs -fs hdfs://namenode:9000 -put /home/hive/data.csv /user/hive/custom_data/"
+```
+
 -----
 
 ## 📊 Integration: Hive & Power BI

@@ -68,8 +68,10 @@ services:
       # We don't need SKIP_SCHEMA_INIT anymore because we are bypassing the script that uses it
     volumes:
       - ./hive-site.xml:/opt/hive/conf/hive-site.xml
+      - ./core-site.xml:/opt/hive/conf/core-site.xml
       - ./lib/postgresql-42.7.4.jar:/opt/hive/lib/postgresql-42.7.4.jar
       - ./data/hive_home:/home/hive
+      - ./training:/home/hive/training
     depends_on:
       namenode:
         condition: service_started
