@@ -1,0 +1,22 @@
+<employees>
+
+<employee id="1">
+
+        <fname>Tom</fname>
+        <age>36</age>
+
+        <address type="home"> 
+            <street>Baker Street</street>
+            <city>London</city>
+            <zip>1000021</zip>
+        </address>
+
+   
+        <address type="office">
+           <street>Downtown</street>
+            <city>New York</city>
+            <zip>300012</zip> 
+        </address>
+</employee>
+
+</employees>

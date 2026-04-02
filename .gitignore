@@ -21,3 +21,5 @@ datanode_data/
 data/
 metastore_db/
 *.log
+
+!training/data/

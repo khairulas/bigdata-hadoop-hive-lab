@@ -1,0 +1,14 @@
+Apache Spark is a fast and general engine for large-scale data processing.
+Run programs up to 100x faster than Hadoop MapReduce in memory, or 10x faster on disk.
+Apache Spark has an advanced DAG execution engine that supports cyclic data flow and in-memory computing.
+Write applications quickly in Java, Scala, Python, R.
+Spark offers over 80 high-level operators that make it easy to build parallel apps. 
+And you can use it interactively from the Scala, Python and R shells.
+Combine SQL, streaming, and complex analytics.
+Spark powers a stack of libraries including SQL and DataFrames, MLlib for machine learning, GraphX, and Spark Streaming. 
+You can combine these libraries seamlessly in the same application.
+Spark runs on Hadoop, Mesos, standalone, or in the cloud. It can access diverse data sources including HDFS, Cassandra, HBase, and S3.
+You can run Spark using its standalone cluster mode, on EC2, on Hadoop YARN, or on Apache Mesos. 
+Access data in HDFS, Cassandra, HBase, Hive, Tachyon, and any Hadoop data source.
+Python is a programming language that lets you work quickly and integrate systems more effectively.
+Documentation for Python's standard library, along with tutorials and guides, are available online.
