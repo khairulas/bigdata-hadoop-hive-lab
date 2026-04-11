@@ -72,6 +72,7 @@ services:
       - ./lib/postgresql-42.7.4.jar:/opt/hive/lib/postgresql-42.7.4.jar
       - ./data/hive_home:/home/hive
       - ./training:/home/hive/training
+      - ./training/data/logs:/home/hive/training/data/logs
     depends_on:
       namenode:
         condition: service_started
