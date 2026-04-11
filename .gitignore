@@ -23,3 +23,4 @@ metastore_db/
 *.log
 
 !training/data/
+!training/data/logs/
