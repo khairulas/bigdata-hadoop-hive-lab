@@ -20,7 +20,6 @@ namenode_data/
 datanode_data/
 data/
 metastore_db/
-*.log
 
 !training/data/
 !training/data/logs/
