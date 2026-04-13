@@ -1,5 +1,3 @@
-version: '3'
-
 services:
   # --- STORAGE LAYER (HDFS) ---
   namenode:
@@ -16,7 +14,6 @@ services:
       - CORE_CONF_hadoop_proxyuser_hue_groups=*
       - HDFS_CONF_dfs_webhdfs_enabled=true
     volumes:
-      # PERSIST HDFS METADATA (The File System Index)
       - ./namenode_data:/hadoop/dfs/name
     networks:
       - bigdata-net
@@ -33,6 +30,58 @@ services:
     volumes:
       # PERSIST HDFS BLOCKS (The Actual Data)
       - ./datanode_data:/hadoop/dfs/data
+    networks:
+      - bigdata-net
+
+  # --- RESOURCE MANAGEMENT LAYER (YARN) ---
+  # --- RESOURCE MANAGEMENT LAYER (YARN) ---
+  # --- RESOURCE MANAGEMENT LAYER (YARN) ---
+  # --- RESOURCE MANAGEMENT LAYER (YARN) ---
+  # --- RESOURCE MANAGEMENT LAYER (YARN) ---
+  resourcemanager:
+    image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8
+    container_name: resourcemanager
+    restart: always
+    ports:
+      - "8088:8088"
+    environment:
+      - SERVICE_PRECONDITION=namenode:9000 namenode:9870 datanode:9864
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - MAPRED_CONF_mapreduce_framework_name=yarn
+      - YARN_CONF_yarn_resourcemanager_hostname=resourcemanager
+      # --- THE ULTIMATE CLASSPATH FIX ---
+      - MAPRED_CONF_yarn_app_mapreduce_am_env=HADOOP_MAPRED_HOME=/opt/hadoop
+      - MAPRED_CONF_mapreduce_map_env=HADOOP_MAPRED_HOME=/opt/hadoop
+      - MAPRED_CONF_mapreduce_reduce_env=HADOOP_MAPRED_HOME=/opt/hadoop
+      - YARN_CONF_yarn_application_classpath=$$HADOOP_CONF_DIR,$$HADOOP_HOME/share/hadoop/common/*,$$HADOOP_HOME/share/hadoop/common/lib/*,$$HADOOP_HOME/share/hadoop/hdfs/*,$$HADOOP_HOME/share/hadoop/hdfs/lib/*,$$HADOOP_HOME/share/hadoop/yarn/*,$$HADOOP_HOME/share/hadoop/yarn/lib/*,$$HADOOP_HOME/share/hadoop/mapreduce/*,$$HADOOP_HOME/share/hadoop/mapreduce/lib/*
+      - MAPRED_CONF_mapreduce_application_classpath=$$HADOOP_HOME/share/hadoop/mapreduce/*,$$HADOOP_HOME/share/hadoop/mapreduce/lib/*
+    volumes:
+      - ./training:/opt/hadoop/training
+    depends_on:
+      - namenode
+      - datanode
+    networks:
+      - bigdata-net
+
+  nodemanager:
+    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8
+    container_name: nodemanager
+    restart: always
+    environment:
+      - SERVICE_PRECONDITION=namenode:9000 namenode:9870 datanode:9864 resourcemanager:8088
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - MAPRED_CONF_mapreduce_framework_name=yarn
+      - YARN_CONF_yarn_resourcemanager_hostname=resourcemanager
+      # --- THE ULTIMATE CLASSPATH FIX ---
+      - MAPRED_CONF_yarn_app_mapreduce_am_env=HADOOP_MAPRED_HOME=/opt/hadoop
+      - MAPRED_CONF_mapreduce_map_env=HADOOP_MAPRED_HOME=/opt/hadoop
+      - MAPRED_CONF_mapreduce_reduce_env=HADOOP_MAPRED_HOME=/opt/hadoop
+      - YARN_CONF_yarn_application_classpath=$$HADOOP_CONF_DIR,$$HADOOP_HOME/share/hadoop/common/*,$$HADOOP_HOME/share/hadoop/common/lib/*,$$HADOOP_HOME/share/hadoop/hdfs/*,$$HADOOP_HOME/share/hadoop/hdfs/lib/*,$$HADOOP_HOME/share/hadoop/yarn/*,$$HADOOP_HOME/share/hadoop/yarn/lib/*,$$HADOOP_HOME/share/hadoop/mapreduce/*,$$HADOOP_HOME/share/hadoop/mapreduce/lib/*
+      - MAPRED_CONF_mapreduce_application_classpath=$$HADOOP_HOME/share/hadoop/mapreduce/*,$$HADOOP_HOME/share/hadoop/mapreduce/lib/*
+    depends_on:
+      - namenode
+      - datanode
+      - resourcemanager
     networks:
       - bigdata-net
 
@@ -59,7 +108,9 @@ services:
 
   # --- COMPUTE LAYER (Hive) ---
   hive-server:
-    image: apache/hive:4.0.0
+    build:
+      context: .
+      dockerfile: Dockerfile.hive
     container_name: hive-server
     restart: always
     ports:
@@ -71,8 +122,11 @@ services:
       # We don't need SKIP_SCHEMA_INIT anymore because we are bypassing the script that uses it
     volumes:
       - ./hive-site.xml:/opt/hive/conf/hive-site.xml
+      - ./core-site.xml:/opt/hive/conf/core-site.xml
       - ./lib/postgresql-42.7.4.jar:/opt/hive/lib/postgresql-42.7.4.jar
       - ./data/hive_home:/home/hive
+      - ./training:/home/hive/training
+      - ./training/data/logs:/home/hive/training/data/logs
     depends_on:
       namenode:
         condition: service_started
@@ -92,7 +146,13 @@ services:
         sleep 15
         echo "2. Initializing Postgres Metastore Schema..."
         /opt/hive/bin/schematool -dbType postgres -initOrUpgradeSchema --verbose
-        echo "3. Starting HiveServer2..."
+        echo "3. Waiting for HDFS to be fully online and out of safe mode..."
+        # Add the -fs flag here
+        until hdfs dfsadmin -fs hdfs://namenode:9000 -safemode wait; do sleep 2; done;
+        echo "4. Setting HDFS root permissions..."
+        # And add the -fs flag here
+        HADOOP_USER_NAME=root hdfs dfs -fs hdfs://namenode:9000 -chmod 777 /
+        echo "5. Starting HiveServer2..."
         /opt/hive/bin/hiveserver2
 
   # --- UI LAYER (Hue) ---
@@ -111,6 +171,16 @@ services:
         condition: service_healthy
     networks:
       - bigdata-net
+    # --- AUTOMATED MIGRATION FIX ---
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        echo "1. Running Hue database migrations..."
+        ./build/env/bin/hue syncdb --noinput
+        ./build/env/bin/hue migrate
+        echo "2. Starting Hue Server..."
+        ./startup.sh
 
 networks:
   bigdata-net:

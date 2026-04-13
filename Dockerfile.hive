@@ -1,0 +1,18 @@
+# Start from the official Hive image
+FROM apache/hive:4.0.0
+
+# Switch to the root user to install software
+USER root
+
+# 1. Install wget and gnupg (needed to securely add new repositories)
+RUN apt-get update && apt-get install -y wget gnupg
+
+# 2. Add the Eclipse Temurin repository (The industry standard for Java 8)
+RUN wget -qO - https://packages.adoptium.net/artifactory/api/gpg/key/public | apt-key add - \
+    && echo "deb https://packages.adoptium.net/artifactory/deb bullseye main" > /etc/apt/sources.list.d/adoptium.list
+
+# 3. Install the Java 8 JDK
+RUN apt-get update && apt-get install -y temurin-8-jdk
+
+# Switch back to the standard 'hive' user
+USER hive

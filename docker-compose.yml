@@ -15,6 +15,7 @@ services:
       - HDFS_CONF_dfs_webhdfs_enabled=true
     volumes:
       - ./namenode_data:/hadoop/dfs/name
+      - ./training:/home/hive/training
     networks:
       - bigdata-net
 
@@ -30,6 +31,53 @@ services:
     volumes:
       # PERSIST HDFS BLOCKS (The Actual Data)
       - ./datanode_data:/hadoop/dfs/data
+    networks:
+      - bigdata-net
+
+  # --- RESOURCE MANAGEMENT LAYER (YARN) ---
+  # --- RESOURCE MANAGEMENT LAYER (YARN) ---
+  # --- RESOURCE MANAGEMENT LAYER (YARN) ---
+  # --- RESOURCE MANAGEMENT LAYER (YARN) ---
+  resourcemanager:
+    image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8
+    container_name: resourcemanager
+    restart: always
+    ports:
+      - "8088:8088"
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - MAPRED_CONF_mapreduce_framework_name=yarn
+      - YARN_CONF_yarn_resourcemanager_hostname=resourcemanager
+      # Inject ALL base paths directly into the MapReduce YARN containers:
+      - MAPRED_CONF_yarn_app_mapreduce_am_env=HADOOP_MAPRED_HOME=/opt/hadoop,HADOOP_COMMON_HOME=/opt/hadoop,HADOOP_HDFS_HOME=/opt/hadoop,HADOOP_YARN_HOME=/opt/hadoop,HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - MAPRED_CONF_mapreduce_map_env=HADOOP_MAPRED_HOME=/opt/hadoop,HADOOP_COMMON_HOME=/opt/hadoop,HADOOP_HDFS_HOME=/opt/hadoop,HADOOP_YARN_HOME=/opt/hadoop,HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - MAPRED_CONF_mapreduce_reduce_env=HADOOP_MAPRED_HOME=/opt/hadoop,HADOOP_COMMON_HOME=/opt/hadoop,HADOOP_HDFS_HOME=/opt/hadoop,HADOOP_YARN_HOME=/opt/hadoop,HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+    volumes:
+      - ./training:/opt/hadoop/training
+    depends_on:
+      - namenode
+      - datanode
+    networks:
+      - bigdata-net
+
+  nodemanager:
+    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8
+    container_name: nodemanager
+    restart: always
+    environment:
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - MAPRED_CONF_mapreduce_framework_name=yarn
+      - YARN_CONF_yarn_resourcemanager_hostname=resourcemanager
+      # Inject ALL base paths directly into the MapReduce YARN containers:
+      - MAPRED_CONF_yarn_app_mapreduce_am_env=HADOOP_MAPRED_HOME=/opt/hadoop,HADOOP_COMMON_HOME=/opt/hadoop,HADOOP_HDFS_HOME=/opt/hadoop,HADOOP_YARN_HOME=/opt/hadoop,HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - MAPRED_CONF_mapreduce_map_env=HADOOP_MAPRED_HOME=/opt/hadoop,HADOOP_COMMON_HOME=/opt/hadoop,HADOOP_HDFS_HOME=/opt/hadoop,HADOOP_YARN_HOME=/opt/hadoop,HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - MAPRED_CONF_mapreduce_reduce_env=HADOOP_MAPRED_HOME=/opt/hadoop,HADOOP_COMMON_HOME=/opt/hadoop,HADOOP_HDFS_HOME=/opt/hadoop,HADOOP_YARN_HOME=/opt/hadoop,HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+    volumes:
+      - ./training:/opt/hadoop/training
+    depends_on:
+      - namenode
+      - datanode
+      - resourcemanager
     networks:
       - bigdata-net
 
@@ -56,7 +104,9 @@ services:
 
   # --- COMPUTE LAYER (Hive) ---
   hive-server:
-    image: apache/hive:4.0.0
+    build:
+      context: .
+      dockerfile: Dockerfile.hive
     container_name: hive-server
     restart: always
     ports:
