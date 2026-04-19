@@ -15,6 +15,8 @@ services:
       - HDFS_CONF_dfs_webhdfs_enabled=true
     volumes:
       - ./namenode_data:/hadoop/dfs/name
+      - ./training:/home/hive/training
+      - ./training/data:/opt/workspace/data
     networks:
       - bigdata-net
 
@@ -37,7 +39,6 @@ services:
   # --- RESOURCE MANAGEMENT LAYER (YARN) ---
   # --- RESOURCE MANAGEMENT LAYER (YARN) ---
   # --- RESOURCE MANAGEMENT LAYER (YARN) ---
-  # --- RESOURCE MANAGEMENT LAYER (YARN) ---
   resourcemanager:
     image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8
     container_name: resourcemanager
@@ -45,16 +46,13 @@ services:
     ports:
       - "8088:8088"
     environment:
-      - SERVICE_PRECONDITION=namenode:9000 namenode:9870 datanode:9864
       - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
       - MAPRED_CONF_mapreduce_framework_name=yarn
       - YARN_CONF_yarn_resourcemanager_hostname=resourcemanager
-      # --- THE ULTIMATE CLASSPATH FIX ---
-      - MAPRED_CONF_yarn_app_mapreduce_am_env=HADOOP_MAPRED_HOME=/opt/hadoop
-      - MAPRED_CONF_mapreduce_map_env=HADOOP_MAPRED_HOME=/opt/hadoop
-      - MAPRED_CONF_mapreduce_reduce_env=HADOOP_MAPRED_HOME=/opt/hadoop
-      - YARN_CONF_yarn_application_classpath=$$HADOOP_CONF_DIR,$$HADOOP_HOME/share/hadoop/common/*,$$HADOOP_HOME/share/hadoop/common/lib/*,$$HADOOP_HOME/share/hadoop/hdfs/*,$$HADOOP_HOME/share/hadoop/hdfs/lib/*,$$HADOOP_HOME/share/hadoop/yarn/*,$$HADOOP_HOME/share/hadoop/yarn/lib/*,$$HADOOP_HOME/share/hadoop/mapreduce/*,$$HADOOP_HOME/share/hadoop/mapreduce/lib/*
-      - MAPRED_CONF_mapreduce_application_classpath=$$HADOOP_HOME/share/hadoop/mapreduce/*,$$HADOOP_HOME/share/hadoop/mapreduce/lib/*
+      # Inject ALL base paths directly into the MapReduce YARN containers:
+      - MAPRED_CONF_yarn_app_mapreduce_am_env=HADOOP_MAPRED_HOME=/opt/hadoop,HADOOP_COMMON_HOME=/opt/hadoop,HADOOP_HDFS_HOME=/opt/hadoop,HADOOP_YARN_HOME=/opt/hadoop,HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - MAPRED_CONF_mapreduce_map_env=HADOOP_MAPRED_HOME=/opt/hadoop,HADOOP_COMMON_HOME=/opt/hadoop,HADOOP_HDFS_HOME=/opt/hadoop,HADOOP_YARN_HOME=/opt/hadoop,HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - MAPRED_CONF_mapreduce_reduce_env=HADOOP_MAPRED_HOME=/opt/hadoop,HADOOP_COMMON_HOME=/opt/hadoop,HADOOP_HDFS_HOME=/opt/hadoop,HADOOP_YARN_HOME=/opt/hadoop,HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
     volumes:
       - ./training:/opt/hadoop/training
     depends_on:
@@ -68,16 +66,15 @@ services:
     container_name: nodemanager
     restart: always
     environment:
-      - SERVICE_PRECONDITION=namenode:9000 namenode:9870 datanode:9864 resourcemanager:8088
       - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
       - MAPRED_CONF_mapreduce_framework_name=yarn
       - YARN_CONF_yarn_resourcemanager_hostname=resourcemanager
-      # --- THE ULTIMATE CLASSPATH FIX ---
-      - MAPRED_CONF_yarn_app_mapreduce_am_env=HADOOP_MAPRED_HOME=/opt/hadoop
-      - MAPRED_CONF_mapreduce_map_env=HADOOP_MAPRED_HOME=/opt/hadoop
-      - MAPRED_CONF_mapreduce_reduce_env=HADOOP_MAPRED_HOME=/opt/hadoop
-      - YARN_CONF_yarn_application_classpath=$$HADOOP_CONF_DIR,$$HADOOP_HOME/share/hadoop/common/*,$$HADOOP_HOME/share/hadoop/common/lib/*,$$HADOOP_HOME/share/hadoop/hdfs/*,$$HADOOP_HOME/share/hadoop/hdfs/lib/*,$$HADOOP_HOME/share/hadoop/yarn/*,$$HADOOP_HOME/share/hadoop/yarn/lib/*,$$HADOOP_HOME/share/hadoop/mapreduce/*,$$HADOOP_HOME/share/hadoop/mapreduce/lib/*
-      - MAPRED_CONF_mapreduce_application_classpath=$$HADOOP_HOME/share/hadoop/mapreduce/*,$$HADOOP_HOME/share/hadoop/mapreduce/lib/*
+      # Inject ALL base paths directly into the MapReduce YARN containers:
+      - MAPRED_CONF_yarn_app_mapreduce_am_env=HADOOP_MAPRED_HOME=/opt/hadoop,HADOOP_COMMON_HOME=/opt/hadoop,HADOOP_HDFS_HOME=/opt/hadoop,HADOOP_YARN_HOME=/opt/hadoop,HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - MAPRED_CONF_mapreduce_map_env=HADOOP_MAPRED_HOME=/opt/hadoop,HADOOP_COMMON_HOME=/opt/hadoop,HADOOP_HDFS_HOME=/opt/hadoop,HADOOP_YARN_HOME=/opt/hadoop,HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+      - MAPRED_CONF_mapreduce_reduce_env=HADOOP_MAPRED_HOME=/opt/hadoop,HADOOP_COMMON_HOME=/opt/hadoop,HADOOP_HDFS_HOME=/opt/hadoop,HADOOP_YARN_HOME=/opt/hadoop,HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+    volumes:
+      - ./training:/opt/hadoop/training
     depends_on:
       - namenode
       - datanode
