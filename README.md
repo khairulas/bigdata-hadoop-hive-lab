@@ -1,379 +1,450 @@
-
 # Big Data Lab: Hadoop & Hive on Docker
 
-A fully containerized Big Data environment for teaching Hadoop HDFS, Apache Hive 4.0, MapReduce, and Data Warehousing concepts.
+> **DSC650 Lab Module — FSKM, UiTM Cawangan Perlis**  
+> A fully containerised Big Data environment for teaching Hadoop HDFS, Apache Hive 4.0, MapReduce, and Data Warehousing concepts.
+
+---
+
+## What's in This Stack
+
+| Container | Image | Role |
+|---|---|---|
+| `namenode` | bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8 | HDFS metadata server |
+| `datanode` | bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8 | HDFS block storage |
+| `resourcemanager` | bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8 | YARN job scheduler |
+| `nodemanager` | bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8 | YARN task executor |
+| `hive-server` | apache/hive:4.0.0 (custom) | HiveServer2 + schematool |
+| `postgres` | postgres:13 | Hive Metastore backend |
+| `hue` | gethue/hue:4.11.0 | Web UI for HDFS & Hive |
+| `edge-node` | bde2020/hadoop-base:2.0.0-hadoop3.2.1-java8 | **Student workspace** |
+
+> **Key architectural principle:** Students do all CLI work from `edge-node`, not from `namenode` or `resourcemanager`. See [Why the Edge Node?](#-why-the-edge-node) below.
+
+---
 
 ## Prerequisites
-* **Docker Desktop** installed and running.
-* **4GB+ RAM** allocated to Docker resources.
-* **ODBC Driver** (optional, for Power BI integration).
 
+- **Docker Desktop** installed and running (WSL 2 backend on Windows)
+- **8 GB RAM** minimum allocated to Docker (Settings → Resources)
+- **Git** for cloning the repository
+- **ODBC Driver** (optional, for Power BI integration in Lab 5)
+
+---
 
 ## 📥 Installation
 
-1. **Clone the Repository**
-    Open your terminal (PowerShell or CMD) and run:
-    ```bash
-    git clone https://github.com/khairulas/bigdata-hadoop-hive-lab.git
-    ```
+### 1. Clone the Repository
 
-2.  **Navigate to the Directory**
-    ```bash
-    cd bigdata-hadoop-hive-lab
-    ```
+```powershell
+git clone https://github.com/khairulas/bigdata-hadoop-hive-lab.git
+cd bigdata-hadoop-hive-lab
+```
 
+### 2. Download the PostgreSQL JDBC Driver
+
+The Hive image requires the PostgreSQL JDBC driver to connect to its metastore. Download it once before the first build:
+
+```powershell
+# PowerShell
+New-Item -ItemType Directory -Force -Path lib
+Invoke-WebRequest -Uri "https://jdbc.postgresql.org/download/postgresql-42.7.4.jar" `
+  -OutFile "lib\postgresql-42.7.4.jar"
+```
+
+### 3. Configure Environment Variables
+
+Copy the example environment file and review the defaults:
+
+```powershell
+copy .env.example .env
+```
+
+The `.env` file contains all credentials and image versions. The defaults work out of the box for a local lab — no changes are required unless you want a different password.
+
+```env
+POSTGRES_USER=hive
+POSTGRES_PASSWORD=hive_lab_2024
+POSTGRES_DB=metastore
+HUE_IMAGE=gethue/hue:4.11.0
+HADOOP_IMAGE_TAG=2.0.0-hadoop3.2.1-java8
+HADOOP_HEAPSIZE=2048
+CLUSTER_NAME=bigdata-lab
+```
+
+> ⚠️ `.env` is listed in `.gitignore` and will never be committed. Do not hardcode credentials anywhere else.
+
+---
 
 ## 🚀 Quick Start
 
-### 1\. Start the Cluster
+### Start the Cluster
 
-Run this command to start the stack:
-cd
-```bash
+```powershell
 docker-compose up -d
 ```
 
-### 2\. Wait for Initialization
+The first run builds the custom `hive-server` image (copies the JDBC driver in). Subsequent starts use the cached image and are much faster.
 
-Wait about **60 seconds** for the containers to fully initialize and for HDFS to leave "Safe Mode".
+### Wait for Initialisation
 
-### 3\. Set Permissions (Run once after starting)
+Allow **90–120 seconds** for all services to become healthy. The `hive-server` runs `schematool` to initialise the Postgres metastore schema and creates all required HDFS directories automatically. You do not need to run any manual HDFS permission commands.
 
-Run these commands in your terminal to unlock HDFS and create the necessary folders:
+Monitor progress:
+
+```powershell
+docker-compose ps          # check container health status
+docker logs hive-server    # watch hive-server startup steps
+```
+
+You should see the hive-server log progress through five steps:
+
+```
+=== [0/5] Writing hive-site.xml with credentials from environment ===
+=== [1/5] Initialising Hive Metastore schema in PostgreSQL ===
+=== [2/5] Waiting for HDFS to exit Safe Mode ===
+=== [3/5] Creating lab HDFS directories ===
+=== [4/5] Setting directory permissions ===
+=== [5/5] Starting HiveServer2 ===
+```
+
+### Access Points
+
+| Service | URL / Command |
+|---|---|
+| HDFS NameNode UI | http://localhost:9870 |
+| YARN Resource Manager UI | http://localhost:8088 |
+| HiveServer2 Web UI | http://localhost:10002 |
+| Hue Web UI | http://localhost:8888 |
+| Beeline (Hive CLI) | `docker exec -it hive-server beeline -u jdbc:hive2://localhost:10000 -n hive -p hive_lab_2024` |
+
+---
+
+## 🖥️ Why the Edge Node?
+
+> **All student CLI work runs inside `edge-node` — not `namenode`, not `resourcemanager`.**
+
+The `namenode` is the single most critical component in a Hadoop cluster. It holds the entire HDFS filesystem namespace in memory. If a student accidentally runs a destructive command inside it, or corrupts the namespace, the entire lab cluster becomes unrecoverable without a full restart and data loss.
+
+In real Hadoop deployments, operators treat the NameNode as an untouchable control-plane server. Data engineers connect to a **gateway node** (also called an edge node) that has the Hadoop client tools installed and communicates with the cluster over the network — which is exactly what `edge-node` provides here.
+
+The `edge-node` container has:
+- Full Hadoop client: `hdfs dfs`, `yarn jar`, `javac`, `hadoop classpath`
+- Beeline for Hive SQL
+- Your lab datasets at `/home/student/training/` (read-only)
+- Your personal writable workspace at `/home/student/mydata/`
+
+### Student Entry Point (All Labs)
+
+```powershell
+docker exec -it edge-node bash
+```
+
+That's the only container students need to exec into for Labs 1–4. For Lab 5, Terminal 2 connects directly to hive-server via Beeline.
+
+---
+
+## 📂 Student Workspace Layout
+
+Inside `edge-node`:
+
+```
+/home/student/
+├── training/          ← read-only lab datasets (accounts.csv, movies.txt, etc.)
+│   └── data/
+│       ├── accounts.csv
+│       ├── movies.txt
+│       ├── employees.json
+│       ├── ratings.csv
+│       └── logs/
+│           └── 2014-01-12.log
+└── mydata/            ← your writable workspace
+    └── exercises/     ← write Java source code here
+```
+
+**Workflow for putting data into HDFS:**
 
 ```bash
-docker exec -it namenode hdfs dfs -chmod -R 777 /
-docker exec -it namenode hdfs dfs -mkdir -p /user/hive/warehouse
-docker exec -it namenode hdfs dfs -chmod -R 777 /user/hive/warehouse
+# Inside edge-node
+cp /home/student/training/data/accounts.csv /home/student/mydata/
+hdfs dfs -put /home/student/mydata/accounts.csv /user/uitm/hd_data/
 ```
 
-### 4\. Connect to Hive CLI
+**Pre-created HDFS directories** (created automatically at startup):
 
-Access the Hive SQL CLI (Beeline) using this command:
+```
+/user/hive/warehouse          ← Hive managed tables
+/user/uitm/hd_data            ← Lab 1 upload exercises
+/user/uitm/data/textdata      ← Lab 2 & 3 text data
+/user/uitm/data/ratings       ← Lab 5 Hive external tables
+/user/uitm/data/weblog        ← Lab 4 log file analysis
+/user/uitm/data/exercise/     ← MapReduce job output
+/user/uitm/data/movie_review_output
+```
+
+---
+
+## 🧪 Lab Exercises Overview
+
+| Lab | Title | Primary Containers |
+|---|---|---|
+| Lab 1 | Apache Hadoop — Local Files & HDFS | `edge-node` |
+| Lab 2 | Executing a MapReduce Job (WordCount) | `edge-node` → YARN |
+| Lab 3 | HDFS Administration (Block Size & Replication) | Host + `edge-node` |
+| Lab 4 | Log File Analysis (Custom MapReduce) | `edge-node` → YARN |
+| Lab 5 | Apache Hive (SQL, Partitioning, Avro, Parquet) | `edge-node` + `hive-server` |
+
+The full lab module document is in the `labs/` folder.
+
+### Lab 1 — HDFS Basics
 
 ```bash
-docker exec -it hive-server beeline -u jdbc:hive2://localhost:10000
-```
-Once connected, you will see the jdbc:hive2://localhost:10000> prompt. You can test your connection by running:
+# Enter the student workspace
+docker exec -it edge-node bash
 
-```SQL
--- Show all databases
-SHOW DATABASES;
+# Navigate to lab datasets
+cd /home/student/training/data
+ls -l
 
--- Switch to the default database
-USE default;
-
--- View all tables
-SHOW TABLES;
-
--- Exit Beeline when finished
-!quit
+# Upload a file to HDFS
+hdfs dfs -mkdir -p /user/uitm/hd_data
+hdfs dfs -put accounts.csv /user/uitm/hd_data/accounts.csv
+hdfs dfs -ls /user/uitm/hd_data
 ```
 
-### 5: Using Hue (Web UI)
-Hue is the easiest way to browse HDFS files, write SQL queries, and visualize your data.
+### Lab 2 — MapReduce (WordCount)
 
-Open your web browser and navigate to: http://localhost:8888
+```bash
+# Inside edge-node — compile and submit
+mkdir -p /home/student/mydata/exercises/wordcount/src/solution
+cd /home/student/mydata/exercises/wordcount/src
 
-First-time login: The first username and password you enter will automatically become the administrator account for Hue. (A common convention for labs is to use hive for both the username and password).
+javac -d . -classpath $(hadoop classpath) solution/WordCount.java
+jar cvf wc.jar solution/*.class
 
-Click on the Editor icon on the left sidebar and select Hive to start writing SQL queries.
+yarn jar wc.jar solution.WordCount \
+  /user/uitm/data/textdata \
+  /user/uitm/data/exercise/wordcount
 
-Click on the File Browser (folder icon) to visually navigate HDFS directories and upload files.
+hdfs dfs -cat /user/uitm/data/exercise/wordcount/part-r-00000 | head -n 20
+```
 
-⚠️ Important Note on Hue's Cache: If you create a table via Beeline or a script, it might not immediately show up in Hue's left-hand table browser. Click the small Refresh icon next to your database name in Hue to flush its cache and fetch the latest tables from the Hive Metastore.
+### Lab 3 — HDFS Administration
 
------
+```powershell
+# On your HOST machine — edit block size config
+docker cp namenode:/opt/hadoop-3.2.1/etc/hadoop/hdfs-site.xml ./hdfs-site.xml
+# (edit hdfs-site.xml — add dfs.blocksize=268435456)
+docker cp ./hdfs-site.xml namenode:/opt/hadoop-3.2.1/etc/hadoop/hdfs-site.xml
+docker restart namenode datanode
+```
 
-## 🛠 Advanced: Container Access & Administration
+```bash
+# Back inside edge-node — test new block size
+docker exec -it edge-node bash
+hdfs dfs -put /home/student/training/data/movies.txt \
+  /user/uitm/data/textdata/movies_256mb.txt
+```
 
-Sometimes you need to go "inside" the servers to run manual commands, fix permissions, or debug issues.
+Verify at http://localhost:9870 → Utilities → Browse the file system.
 
-### 1\. How to Enter the Container Shell (Bash)
+### Lab 4 — Log File Analysis
 
-Use these commands to open a Linux terminal inside the specific container.
+```bash
+# Inside edge-node
+docker exec -it edge-node bash
 
-  * **To manage HDFS files (NameNode):**
-    ```bash
-    docker exec -it namenode bash
-    ```
-  * **To manage Hive logs or configuration:**
-    ```bash
-    docker exec -it hive-server bash
-    ```
-  * **To exit the shell:**
-    Type `exit` and press Enter.
+hdfs dfs -put /home/student/training/data/logs/2014-01-12.log \
+  /user/uitm/data/weblog/
 
-### 2\. Basic Hadoop Administration Cheat Sheet
+yarn jar logfile.jar solution.LogFileAnalysis \
+  /user/uitm/data/weblog/2014-01-12.log \
+  /user/uitm/data/logfileoutput
 
-Once inside the **NameNode** shell, you can run these commands:
+hdfs dfs -cat /user/uitm/data/logfileoutput/part-r-00000 | head -n 20
+```
+
+Monitor jobs at http://localhost:8088.
+
+### Lab 5 — Apache Hive (Two-Terminal Setup)
+
+Open two PowerShell terminals side by side:
+
+**Terminal 1 — HDFS Admin:**
+```powershell
+docker exec -it edge-node bash
+# Run hdfs dfs commands here
+```
+
+**Terminal 2 — Hive SQL Analyst:**
+```powershell
+docker exec -it hive-server beeline -u jdbc:hive2://localhost:10000 -n hive -p hive_lab_2024
+```
+
+Example — create a database and external table:
+```sql
+CREATE DATABASE uitm_db;
+USE uitm_db;
+
+CREATE EXTERNAL TABLE ratings (
+  userid  int,
+  movieid int,
+  rating  int,
+  tstamp  string
+)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+LOCATION '/user/uitm/data/ratings';
+
+LOAD DATA LOCAL INPATH '/home/uitm/training/data/ratings.csv' INTO TABLE ratings;
+SELECT * FROM ratings LIMIT 10;
+```
+
+---
+
+## 🛠 Container Reference
+
+### Useful Commands
+
+```powershell
+# View all container statuses
+docker-compose ps
+
+# Start / stop the whole cluster
+docker-compose up -d
+docker-compose down
+
+# Tear down and wipe all data volumes (full reset)
+docker-compose down -v
+
+# View logs for a specific container
+docker logs hive-server
+docker logs namenode
+
+# Follow live logs
+docker logs -f hive-server
+```
+
+### HDFS Cheat Sheet (run inside edge-node)
 
 | Action | Command |
-| :--- | :--- |
-| **List files** | `hdfs dfs -ls /` |
-| **Create directory** | `hdfs dfs -mkdir -p /user/mydata` |
-| **Upload file** | `hdfs dfs -put /local/path/file.csv /hdfs/path/` |
-| **Delete file** | `hdfs dfs -rm /path/to/file` |
-| **Check file content** | `hdfs dfs -cat /path/to/file` |
-| **Check Disk Usage** | `hdfs dfs -du -h /` |
-| **Check Safe Mode** | `hdfs dfsadmin -safemode get` |
-| **Leave Safe Mode** | `hdfs dfsadmin -safemode leave` |
+|---|---|
+| List files | `hdfs dfs -ls /user/uitm` |
+| Create directory | `hdfs dfs -mkdir -p /user/uitm/mydir` |
+| Upload file | `hdfs dfs -put /local/file.csv /user/uitm/mydir/` |
+| Download file | `hdfs dfs -get /user/uitm/file.csv /home/student/mydata/` |
+| Delete file | `hdfs dfs -rm /user/uitm/file.csv` |
+| Delete directory | `hdfs dfs -rm -r /user/uitm/mydir` |
+| View file contents | `hdfs dfs -cat /user/uitm/file.csv \| head` |
+| Check disk usage | `hdfs dfs -du -h /user/uitm` |
+| Check Safe Mode | `hdfs dfsadmin -fs hdfs://namenode:9000 -safemode get` |
 
------
+### Container Access Reference
 
-## 🧪 Lab Exercises
-
-### Exercise 1: External Tables (Parquet)
-
-**Objective:** Create an external table manually inside HDFS.
-
-1.  **Create a raw folder in HDFS** (Run in terminal):
-
-    ```bash
-    docker exec -it namenode hdfs dfs -mkdir -p /data/external_lab
-    docker exec -it namenode hdfs dfs -chmod -R 777 /data/external_lab
-    ```
-
-2.  **Create the external table** (Run in Beeline):
-
-    ```sql
-    CREATE EXTERNAL TABLE lab_students (id INT, name STRING)
-    STORED AS PARQUET
-    LOCATION 'hdfs://namenode:9000/data/external_lab';
-    ```
-
-3.  **Insert and Select** (Run in Beeline):
-
-    ```sql
-    INSERT INTO lab_students VALUES (500, 'Student A');
-    SELECT * FROM lab_students;
-    ```
-
-### Exercise 2: Data Ingestion and External Tables (CSV)
-
-**Objective:** Practice ETL by loading a raw CSV file from the host machine into HDFS and creating a resilient Hive External Table.
-
-#### Step 1: Ingest Data to HDFS (Terminal Commands)
-
-1.  **Prepare Data:** Ensure `ratings.csv` is in your local `data/` folder.
-
-2.  **Copy file from Host to NameNode Container:**
-
-    ```bash
-    docker cp data/ratings.csv namenode:/tmp/ratings.csv
-    ```
-
-3.  **Upload file from Container to HDFS:**
-
-    ```bash
-    docker exec -it namenode hdfs dfs -mkdir -p /user/data/ratings
-    docker exec -it namenode hdfs dfs -put -f /tmp/ratings.csv /user/data/ratings/ratings.csv
-    ```
-
-#### Step 2: Create Hive External Table (Beeline)
-
-Run the following SQL in Beeline to map the data:
-
-```sql
-USE default; 
-
-CREATE EXTERNAL TABLE IF NOT EXISTS ratings (
-    userid INT,
-    movieid INT,
-    rating DOUBLE,
-    ts BIGINT
-)
-ROW FORMAT DELIMITED
-FIELDS TERMINATED BY ','
-STORED AS TEXTFILE
-LOCATION 'hdfs://namenode:9000/user/data/ratings'
-TBLPROPERTIES ("skip.header.line.count"="1");
-```
-
-#### Step 3: Verify Data
-
-```sql
-SELECT * FROM ratings LIMIT 10;
-SELECT AVG(rating), COUNT(movieid) FROM ratings;
-```
-
-### Exercise 3: MapReduce Data Analysis (WordCount)
-
-**Objective:** Execute a classic MapReduce job using YARN to analyze text data. We will count the frequency of every word in a text file.
-
-#### Step 1: Create Input Data
-
-Run these commands in your **local terminal** to generate a simple text file inside the NameNode:
-
-```bash
-# 1. Enter the NameNode
-docker exec -it namenode bash
-
-# 2. Create a dummy text file
-echo "Hadoop is great" > input.txt
-echo "Hive is SQL on Hadoop" >> input.txt
-echo "Big Data is the future" >> input.txt
-echo "Hadoop uses MapReduce" >> input.txt
-
-# 3. Create an input directory in HDFS
-hdfs dfs -mkdir -p /user/mapreduce/input
-
-# 4. Upload the file to HDFS
-hdfs dfs -put input.txt /user/mapreduce/input/
-```
-
-#### Step 2: Run the MapReduce Job
-
-We will use the built-in Hadoop example JAR to run the `wordcount` program. We use a dynamic command (`grep -v sources`) to automatically find the correct executable JAR file.
-
-```bash
-# Run this inside the NameNode shell
-yarn jar /opt/hadoop-3.2.1/share/hadoop/mapreduce/hadoop-mapreduce-examples-3.2.1.jar wordcount /user/mapreduce/input /user/mapreduce/output
-```
-
-*Note: If the output directory `/user/mapreduce/output` already exists, the job will fail. You must delete it first using `hdfs dfs -rm -r /user/mapreduce/output`.*
-
-#### Step 3: View Results
-
-Read the output file generated by the Reducer:
-
-```bash
-hdfs dfs -cat /user/mapreduce/output/part-r-00000
-```
-
-**Expected Output:**
-
-```
-Big     1
-Data    1
-Hadoop  3
-Hive    1
-MapReduce 1
-SQL     1
-...
-```
-
-***
-
-## 📂 Loading and Querying Data
-
-Because Hive is a compute engine, it does not store data directly on your local hard drive. Instead, it reads data distributed across the Hadoop Distributed File System (HDFS). 
-
-To analyze data, you must first move it from your local machine, into the Docker container, and finally into HDFS.
-
-### 1. Loading the Sample Training Data
-The `training` folder provided in this repository is already mapped to the Hive container at `/home/hive/training`. To load it into HDFS for analysis, follow these steps:
-
-**Step 1: Open a terminal inside the Hive container**
-```bash
-docker exec -it hive-server bash
-```
-
-**Step 2: Create a directory in HDFS to hold your data**
-*(Note: We use the `-fs` flag to ensure the command routes properly to the NameNode)*
-```bash
-hdfs dfs -fs hdfs://namenode:9000 -mkdir -p /user/hive/data/
-```
-
-**Step 3: Upload the training folder into HDFS**
-```bash
-hdfs dfs -fs hdfs://namenode:9000 -put /home/hive/training /user/hive/data/
-```
-
-**Step 4: Verify the upload was successful**
-```bash
-hdfs dfs -fs hdfs://namenode:9000 -ls /user/hive/data/training/data
-```
+| Purpose | Command |
+|---|---|
+| **Student lab work (Labs 1–4)** | `docker exec -it edge-node bash` |
+| Hive SQL (Lab 5) | `docker exec -it hive-server beeline -u jdbc:hive2://localhost:10000 -n hive -p hive_lab_2024` |
+| Hue Web UI (Lab 5) | http://localhost:8888 |
+| Admin — copy config files | `docker cp namenode:/opt/hadoop-3.2.1/etc/hadoop/hdfs-site.xml ./` |
+| ❌ Do NOT use | `docker exec -it namenode bash` ← control plane only |
+| ❌ Do NOT use | `docker exec -it resourcemanager bash` ← control plane only |
 
 ---
 
-### 2. Querying the Data in Hive
-Once the data is in HDFS, you can create External Tables in Hive to query it. 
-
-**Important Note:** Hive `LOCATION` paths must point to a **directory**, not an individual file. If you want to query `accounts.csv`, it is best practice to put it in its own isolated folder within HDFS first.
-
-**Example: Creating a table via Beeline or Hue**
-```sql
--- Create a table pointing to the HDFS directory
-CREATE EXTERNAL TABLE IF NOT EXISTS accounts (
-    account_id INT,
-    account_name STRING,
-    balance DOUBLE
-)
-ROW FORMAT DELIMITED
-FIELDS TERMINATED BY ','
-STORED AS TEXTFILE
-LOCATION '/user/hive/data/training/data/accounts_folder'; 
--- (Ensure your CSV is isolated in this folder)
-
--- Query the data
-SELECT * FROM accounts LIMIT 10;
-```
-
----
-
-### 3. Loading Your Own Custom Data
-When you are ready to use your own datasets, you have two easy methods to get them into HDFS.
-
-#### Method A: The Shared Volume (Recommended)
-Your `docker-compose.yml` is already configured with a shared volume mapping: `./data/hive_home:/home/hive`.
-1. On your host machine (Windows/Mac/Linux), drag and drop your data files into the local `./data/hive_home` folder inside your project directory.
-2. The files will instantly appear inside the `hive-server` container at `/home/hive/`.
-3. Jump into the container and move them to HDFS:
-   ```bash
-   docker exec -it hive-server bash
-   hdfs dfs -fs hdfs://namenode:9000 -mkdir -p /user/hive/my_custom_data/
-   hdfs dfs -fs hdfs://namenode:9000 -put /home/hive/my_dataset.csv /user/hive/my_custom_data/
-   ```
-
-#### Method B: Docker Copy (`docker cp`)
-If you want to copy files from anywhere on your computer without using the shared folder, you can use the `docker cp` command from your host machine's terminal:
-```bash
-# 1. Copy the file from your computer into the container
-docker cp C:\path\to\your\data.csv hive-server:/home/hive/data.csv
-
-# 2. Execute the HDFS put command to move it into Hadoop
-docker exec -it hive-server bash -c "hdfs dfs -fs hdfs://namenode:9000 -mkdir -p /user/hive/custom_data/ && hdfs dfs -fs hdfs://namenode:9000 -put /home/hive/data.csv /user/hive/custom_data/"
-```
-
------
-
-## 📊 Integration: Hive & Power BI
+## 📊 Power BI Integration (Lab 5)
 
 ### Step 1: Install the ODBC Driver
 
-1.  Download the **Microsoft Hive ODBC Driver** (64-bit) from the official Microsoft website.
-2.  Install the `.msi` file.
+Download and install the **Microsoft Hive ODBC Driver (64-bit)** from the Microsoft website.
 
 ### Step 2: Configure ODBC Data Source
 
-1.  Open Windows Search and run **ODBC Data Sources (64-bit)**.
-2.  Go to the **System DSN** tab and click **Add...**
-3.  Select **Microsoft Hive ODBC Driver** and click Finish.
-4.  Configure as follows:
-      * **Data Source Name:** `DockerHive`
-      * **Host:** `localhost`
-      * **Port:** `10000`
-      * **Database:** `default`
-      * **Mechanism:** `User Name`
-      * **User Name:** `hive`
-      * **Password:** *(Leave Empty)*
-5.  Click **Test**. If it says "SUCCESS", you are ready.
+1. Open **ODBC Data Sources (64-bit)** from Windows search.
+2. Go to **System DSN** → **Add** → **Microsoft Hive ODBC Driver**.
+3. Configure:
+   - **Data Source Name:** `DockerHive`
+   - **Host:** `localhost`
+   - **Port:** `10000`
+   - **Database:** `default`
+   - **Mechanism:** `User Name`
+   - **User Name:** `hive`
+   - **Password:** `hive_lab_2024`
+4. Click **Test** — you should see `SUCCESS`.
 
 ### Step 3: Connect in Power BI
 
-1.  Open **Power BI Desktop**.
-2.  Click **Get Data -\> More... -\> ODBC**.
-3.  Select `DockerHive` from the dropdown.
-4.  In the Navigator, expand **HIVE** to see your tables (`lab_students`, `ratings`).
-5.  Select tables and click **Load**.
+1. Open **Power BI Desktop** → **Get Data** → **ODBC**.
+2. Select `DockerHive`.
+3. In the Navigator, expand **HIVE** to see your tables.
+4. Select tables and click **Load**.
 
------
+---
+
+## 🗂 Repository Structure
+
+```
+bigdata-hadoop-hive-lab/
+├── .env                      ← secrets & image versions (not committed)
+├── .env.example              ← template for .env
+├── .gitignore
+├── docker-compose.yml        ← full 8-service stack definition
+├── Dockerfile.hive           ← custom hive-server image (adds JDBC driver)
+├── hive-entrypoint.sh        ← startup script: writes hive-site.xml, schematool, HDFS dirs
+├── hive-site.xml             ← static Hive config (no credentials)
+├── core-site.xml             ← Hadoop core config (proxy-user, WebHDFS)
+├── hue.ini                   ← Hue web UI configuration
+├── init-hive-db.sql          ← creates metastore + hue databases in Postgres
+├── lib/
+│   └── postgresql-42.7.4.jar ← JDBC driver (download via setup instructions)
+├── training/
+│   └── data/                 ← lab datasets (mounted read-only into edge-node)
+│       ├── accounts.csv
+│       ├── movies.txt
+│       ├── employees.json
+│       ├── ratings.csv
+│       └── logs/
+│           └── 2014-01-12.log
+└── labs/
+    └── DSC650_Lab_Module_Updated.docx
+```
+
+---
 
 ## ❓ Troubleshooting
 
-  * **Connection Refused?** If Beeline fails to connect, the server might still be starting. Wait 30 more seconds or run `docker logs hive-server` to check progress.
+**`hive-server` shows Error or unhealthy:**
+```powershell
+docker logs hive-server 2>&1 | Select-Object -Last 50
+```
+Most commonly caused by Postgres not being ready. The entrypoint retries automatically — wait 60 seconds and check again.
 
-  * **Permission Denied?** Re-run the commands in "Step 3: Set Permissions" of the Quick Start to ensure HDFS is writable.
+**`HADOOP_HOME` variable warnings on startup:**
+These are harmless warnings from Docker Compose trying to expand `$HADOOP_HOME` on your Windows host. The variable is correctly set inside the containers at runtime.
 
-<!-- end list -->
+**HDFS Safe Mode errors:**
+```bash
+# Inside edge-node — wait for safe mode to clear automatically, or force-leave:
+hdfs dfsadmin -fs hdfs://namenode:9000 -safemode leave
+```
+
+**Beeline connection refused:**
+HiveServer2 may still be initialising. Wait 90 seconds from first `docker-compose up`, then retry. Check `docker logs hive-server` to confirm step `[5/5] Starting HiveServer2` has completed.
+
+**Full reset (wipe all data and start fresh):**
+```powershell
+docker-compose down -v
+docker-compose up -d
+```
+
+**Docker Desktop Linux engine not found:**
+Open Docker Desktop from the Start menu and wait for it to fully start. If it shows an error, right-click the tray icon → Restart Docker Desktop. Then retry `docker-compose up -d`.
+
+---
+
+## Architecture Notes
+
+- **Credentials** are stored only in `.env` and injected into containers at runtime. No passwords exist in any XML or YAML file.
+- **hive-site.xml** is written dynamically by `hive-entrypoint.sh` at container startup using environment variables — this bypasses a Hive 4.0 limitation where `${env.X}` XML substitution does not work when a custom entrypoint is used.
+- **HDFS permissions** are scoped to `/user/uitm/` and `/user/hive/warehouse` only — no `chmod 777 /` on the root.
+- **Image versions** are pinned in `.env` to prevent unexpected breakage from upstream updates.
+- **Named Docker volumes** (`namenode_data`, `datanode_data`, `postgres_data`, `hive_home`, `student_work`) persist data across container restarts. Use `docker-compose down -v` only when you want a complete reset.
