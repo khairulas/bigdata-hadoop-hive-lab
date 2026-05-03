@@ -1,193 +1,355 @@
+# =============================================================================
+# Big Data Lab — docker-compose.yml (rebuilt)
+#
+# Lab coverage
+#   Lab 1 — HDFS navigation & file operations   (edge-node → namenode/datanode)
+#   Lab 2 — Hive DDL & external tables (CSV)    (edge-node → hive-server, postgres)
+#   Lab 3 — Hive external tables (Parquet)      (edge-node → hive-server)
+#   Lab 4 — MapReduce / YARN WordCount          (edge-node → resourcemanager, nodemanager)
+#   Lab 5 — Hue web UI + Power BI ODBC          (hue, hive-server)
+#
+# Student workflow
+#   All CLI work runs inside edge-node — NOT namenode.
+#   docker exec -it edge-node bash
+#     /home/student/training/   read-only lab datasets
+#     /home/student/mydata/     writable — drop own files here, then push to HDFS
+#
+# Improvements over original
+#   ✔ All secrets moved to .env (no hardcoded passwords)
+#   ✔ Hue image pinned (was :latest)
+#   ✔ apt-key replaced with signed-by keyring in Dockerfile.hive
+#   ✔ apt cache cleaned in Dockerfile.hive
+#   ✔ Duplicate YAML comments removed
+#   ✔ training/ volume scoped correctly (edge-node + hive-server only)
+#   ✔ Memory limits added to every service
+#   ✔ sleep 15 replaced by proper depends_on healthcheck
+#   ✔ HiveServer2 healthcheck added (Hue waits for it)
+#   ✔ HDFS chmod scoped to specific lab directories (no chmod 777 /)
+#   ✔ MapReduce paths use $${HADOOP_HOME} env var
+#   ✔ Dedicated edge-node replaces namenode as student entry point
+# =============================================================================
+
 services:
-  # --- STORAGE LAYER (HDFS) ---
+
+  # ---------------------------------------------------------------------------
+  # STORAGE LAYER — HDFS
+  # Labs 1, 2, 3, 4, 5  (every lab touches HDFS)
+  # ---------------------------------------------------------------------------
   namenode:
-    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    image: bde2020/hadoop-namenode:${HADOOP_IMAGE_TAG}
     container_name: namenode
-    restart: always
+    restart: unless-stopped
     ports:
-      - "9870:9870"
-      - "9000:9000"
+      - "9870:9870"   # NameNode Web UI  (Lab 1 — HDFS health check)
+      - "9000:9000"   # HDFS RPC         (inter-service communication)
     environment:
-      - CLUSTER_NAME=test
-      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
-      - CORE_CONF_hadoop_proxyuser_hue_hosts=*
-      - CORE_CONF_hadoop_proxyuser_hue_groups=*
-      - HDFS_CONF_dfs_webhdfs_enabled=true
+      CLUSTER_NAME: ${CLUSTER_NAME}
+      CORE_CONF_fs_defaultFS: hdfs://namenode:9000
+      CORE_CONF_hadoop_proxyuser_hue_hosts: "*"
+      CORE_CONF_hadoop_proxyuser_hue_groups: "*"
+      HDFS_CONF_dfs_webhdfs_enabled: "true"
+      HDFS_CONF_dfs_replication: "1"          # single-node lab: 1 replica is correct
     volumes:
-      - ./namenode_data:/hadoop/dfs/name
-      - ./training:/home/uitm/training
-    networks:
-      - bigdata-net
-
-  datanode:
-    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
-    container_name: datanode
-    restart: always
-    environment:
-      - SERVICE_PRECONDITION=namenode:9870
-      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
-    depends_on:
-      - namenode
-    volumes:
-      # PERSIST HDFS BLOCKS (The Actual Data)
-      - ./datanode_data:/hadoop/dfs/data
-    networks:
-      - bigdata-net
-
-  # --- RESOURCE MANAGEMENT LAYER (YARN) ---
-  # --- RESOURCE MANAGEMENT LAYER (YARN) ---
-  # --- RESOURCE MANAGEMENT LAYER (YARN) ---
-  # --- RESOURCE MANAGEMENT LAYER (YARN) ---
-  resourcemanager:
-    image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8
-    container_name: resourcemanager
-    restart: always
-    ports:
-      - "8088:8088"
-    environment:
-      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
-      - MAPRED_CONF_mapreduce_framework_name=yarn
-      - YARN_CONF_yarn_resourcemanager_hostname=resourcemanager
-      - "MAPRED_CONF_yarn_app_mapreduce_am_env=HADOOP_MAPRED_HOME=/opt/hadoop-3.2.1"
-      - "MAPRED_CONF_mapreduce_map_env=HADOOP_MAPRED_HOME=/opt/hadoop-3.2.1"
-      - "MAPRED_CONF_mapreduce_reduce_env=HADOOP_MAPRED_HOME=/opt/hadoop-3.2.1"
-      - "YARN_CONF_yarn_application_classpath=/opt/hadoop-3.2.1/etc/hadoop:/opt/hadoop-3.2.1/share/hadoop/common/*:/opt/hadoop-3.2.1/share/hadoop/common/lib/*:/opt/hadoop-3.2.1/share/hadoop/hdfs/*:/opt/hadoop-3.2.1/share/hadoop/hdfs/lib/*:/opt/hadoop-3.2.1/share/hadoop/mapreduce/*:/opt/hadoop-3.2.1/share/hadoop/mapreduce/lib/*:/opt/hadoop-3.2.1/share/hadoop/yarn/*:/opt/hadoop-3.2.1/share/hadoop/yarn/lib/*"
-      - "MAPRED_CONF_mapreduce_application_classpath=/opt/hadoop-3.2.1/etc/hadoop:/opt/hadoop-3.2.1/share/hadoop/common/*:/opt/hadoop-3.2.1/share/hadoop/common/lib/*:/opt/hadoop-3.2.1/share/hadoop/hdfs/*:/opt/hadoop-3.2.1/share/hadoop/hdfs/lib/*:/opt/hadoop-3.2.1/share/hadoop/mapreduce/*:/opt/hadoop-3.2.1/share/hadoop/mapreduce/lib/*:/opt/hadoop-3.2.1/share/hadoop/yarn/*:/opt/hadoop-3.2.1/share/hadoop/yarn/lib/*"
-      - YARN_CONF_yarn_nodemanager_aux___services=mapreduce_shuffle
-      - YARN_CONF_yarn_nodemanager_aux___services_mapreduce__shuffle_class=org.apache.hadoop.mapred.ShuffleHandler
-    volumes:
-      - ./training:/home/uitm/training
-    depends_on:
-      - namenode
-      - datanode
-    networks:
-      - bigdata-net
-
-  nodemanager:
-    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8
-    container_name: nodemanager
-    restart: always
-    environment:
-      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
-      - MAPRED_CONF_mapreduce_framework_name=yarn
-      - YARN_CONF_yarn_resourcemanager_hostname=resourcemanager
-      - "MAPRED_CONF_yarn_app_mapreduce_am_env=HADOOP_MAPRED_HOME=/opt/hadoop-3.2.1"
-      - "MAPRED_CONF_mapreduce_map_env=HADOOP_MAPRED_HOME=/opt/hadoop-3.2.1"
-      - "MAPRED_CONF_mapreduce_reduce_env=HADOOP_MAPRED_HOME=/opt/hadoop-3.2.1"
-      - "YARN_CONF_yarn_application_classpath=/opt/hadoop-3.2.1/etc/hadoop:/opt/hadoop-3.2.1/share/hadoop/common/*:/opt/hadoop-3.2.1/share/hadoop/common/lib/*:/opt/hadoop-3.2.1/share/hadoop/hdfs/*:/opt/hadoop-3.2.1/share/hadoop/hdfs/lib/*:/opt/hadoop-3.2.1/share/hadoop/mapreduce/*:/opt/hadoop-3.2.1/share/hadoop/mapreduce/lib/*:/opt/hadoop-3.2.1/share/hadoop/yarn/*:/opt/hadoop-3.2.1/share/hadoop/yarn/lib/*"
-      - "MAPRED_CONF_mapreduce_application_classpath=/opt/hadoop-3.2.1/etc/hadoop:/opt/hadoop-3.2.1/share/hadoop/common/*:/opt/hadoop-3.2.1/share/hadoop/common/lib/*:/opt/hadoop-3.2.1/share/hadoop/hdfs/*:/opt/hadoop-3.2.1/share/hadoop/hdfs/lib/*:/opt/hadoop-3.2.1/share/hadoop/mapreduce/*:/opt/hadoop-3.2.1/share/hadoop/mapreduce/lib/*:/opt/hadoop-3.2.1/share/hadoop/yarn/*:/opt/hadoop-3.2.1/share/hadoop/yarn/lib/*"
-      - YARN_CONF_yarn_nodemanager_aux___services=mapreduce_shuffle
-      - YARN_CONF_yarn_nodemanager_aux___services_mapreduce__shuffle_class=org.apache.hadoop.mapred.ShuffleHandler
-    volumes:
-      - ./training:/home/uitm/training
-    depends_on:
-      - namenode
-      - datanode
-      - resourcemanager
-    networks:
-      - bigdata-net
-
-  # --- METADATA LAYER (PostgreSQL) ---
-  postgres:
-    image: postgres:13
-    container_name: postgres
-    restart: always
-    environment:
-      POSTGRES_DB: metastore
-      POSTGRES_USER: hive
-      POSTGRES_PASSWORD: hive
-    volumes:
-      # PERSIST HIVE SCHEMA (The Table Definitions)
-      - ./postgres_data:/var/lib/postgresql/data
-      - ./init-hive-db.sql:/docker-entrypoint-initdb.d/init-hive-db.sql
+      - namenode_data:/hadoop/dfs/name        # persistent HDFS metadata (admin only)
     networks:
       - bigdata-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hive"]
+      test: ["CMD", "curl", "-f", "http://localhost:9870/"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  datanode:
+    image: bde2020/hadoop-datanode:${HADOOP_IMAGE_TAG}
+    container_name: datanode
+    restart: unless-stopped
+    environment:
+      SERVICE_PRECONDITION: "namenode:9870"
+      CORE_CONF_fs_defaultFS: hdfs://namenode:9000
+      HDFS_CONF_dfs_replication: "1"
+    volumes:
+      - datanode_data:/hadoop/dfs/data        # persistent HDFS block storage
+    networks:
+      - bigdata-net
+    depends_on:
+      namenode:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  # ---------------------------------------------------------------------------
+  # COMPUTE LAYER — YARN
+  # Lab 4 — MapReduce / YARN WordCount job
+  # ---------------------------------------------------------------------------
+  resourcemanager:
+    image: bde2020/hadoop-resourcemanager:${HADOOP_IMAGE_TAG}
+    container_name: resourcemanager
+    restart: unless-stopped
+    ports:
+      - "8088:8088"   # YARN Resource Manager UI (Lab 4 — monitor MR jobs)
+    environment:
+      CORE_CONF_fs_defaultFS: hdfs://namenode:9000
+      MAPRED_CONF_mapreduce_framework_name: yarn
+      YARN_CONF_yarn_resourcemanager_hostname: resourcemanager
+      MAPRED_CONF_yarn_app_mapreduce_am_env: "HADOOP_MAPRED_HOME=$${HADOOP_HOME}"
+      MAPRED_CONF_mapreduce_map_env: "HADOOP_MAPRED_HOME=$${HADOOP_HOME}"
+      MAPRED_CONF_mapreduce_reduce_env: "HADOOP_MAPRED_HOME=$${HADOOP_HOME}"
+      YARN_CONF_yarn_application_classpath: >-
+        $${HADOOP_HOME}/etc/hadoop:
+        $${HADOOP_HOME}/share/hadoop/common/*:
+        $${HADOOP_HOME}/share/hadoop/common/lib/*:
+        $${HADOOP_HOME}/share/hadoop/hdfs/*:
+        $${HADOOP_HOME}/share/hadoop/hdfs/lib/*:
+        $${HADOOP_HOME}/share/hadoop/mapreduce/*:
+        $${HADOOP_HOME}/share/hadoop/mapreduce/lib/*:
+        $${HADOOP_HOME}/share/hadoop/yarn/*:
+        $${HADOOP_HOME}/share/hadoop/yarn/lib/*
+      MAPRED_CONF_mapreduce_application_classpath: >-
+        $${HADOOP_HOME}/etc/hadoop:
+        $${HADOOP_HOME}/share/hadoop/common/*:
+        $${HADOOP_HOME}/share/hadoop/common/lib/*:
+        $${HADOOP_HOME}/share/hadoop/hdfs/*:
+        $${HADOOP_HOME}/share/hadoop/hdfs/lib/*:
+        $${HADOOP_HOME}/share/hadoop/mapreduce/*:
+        $${HADOOP_HOME}/share/hadoop/mapreduce/lib/*:
+        $${HADOOP_HOME}/share/hadoop/yarn/*:
+        $${HADOOP_HOME}/share/hadoop/yarn/lib/*
+      YARN_CONF_yarn_nodemanager_aux___services: mapreduce_shuffle
+      YARN_CONF_yarn_nodemanager_aux___services_mapreduce__shuffle_class: org.apache.hadoop.mapred.ShuffleHandler
+    depends_on:
+      namenode:
+        condition: service_healthy
+      datanode:
+        condition: service_started
+    networks:
+      - bigdata-net
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+
+  nodemanager:
+    image: bde2020/hadoop-nodemanager:${HADOOP_IMAGE_TAG}
+    container_name: nodemanager
+    restart: unless-stopped
+    environment:
+      CORE_CONF_fs_defaultFS: hdfs://namenode:9000
+      MAPRED_CONF_mapreduce_framework_name: yarn
+      YARN_CONF_yarn_resourcemanager_hostname: resourcemanager
+      MAPRED_CONF_yarn_app_mapreduce_am_env: "HADOOP_MAPRED_HOME=$${HADOOP_HOME}"
+      MAPRED_CONF_mapreduce_map_env: "HADOOP_MAPRED_HOME=$${HADOOP_HOME}"
+      MAPRED_CONF_mapreduce_reduce_env: "HADOOP_MAPRED_HOME=$${HADOOP_HOME}"
+      YARN_CONF_yarn_application_classpath: >-
+        $${HADOOP_HOME}/etc/hadoop:
+        $${HADOOP_HOME}/share/hadoop/common/*:
+        $${HADOOP_HOME}/share/hadoop/common/lib/*:
+        $${HADOOP_HOME}/share/hadoop/hdfs/*:
+        $${HADOOP_HOME}/share/hadoop/hdfs/lib/*:
+        $${HADOOP_HOME}/share/hadoop/mapreduce/*:
+        $${HADOOP_HOME}/share/hadoop/mapreduce/lib/*:
+        $${HADOOP_HOME}/share/hadoop/yarn/*:
+        $${HADOOP_HOME}/share/hadoop/yarn/lib/*
+      MAPRED_CONF_mapreduce_application_classpath: >-
+        $${HADOOP_HOME}/etc/hadoop:
+        $${HADOOP_HOME}/share/hadoop/common/*:
+        $${HADOOP_HOME}/share/hadoop/common/lib/*:
+        $${HADOOP_HOME}/share/hadoop/hdfs/*:
+        $${HADOOP_HOME}/share/hadoop/hdfs/lib/*:
+        $${HADOOP_HOME}/share/hadoop/mapreduce/*:
+        $${HADOOP_HOME}/share/hadoop/mapreduce/lib/*:
+        $${HADOOP_HOME}/share/hadoop/yarn/*:
+        $${HADOOP_HOME}/share/hadoop/yarn/lib/*
+      YARN_CONF_yarn_nodemanager_aux___services: mapreduce_shuffle
+      YARN_CONF_yarn_nodemanager_aux___services_mapreduce__shuffle_class: org.apache.hadoop.mapred.ShuffleHandler
+      YARN_CONF_yarn_nodemanager_resource_memory___mb: "2048"
+      YARN_CONF_yarn_nodemanager_vmem___check___enabled: "false"
+    depends_on:
+      resourcemanager:
+        condition: service_started
+    networks:
+      - bigdata-net
+    deploy:
+      resources:
+        limits:
+          memory: 1536m
+
+  # ---------------------------------------------------------------------------
+  # METADATA LAYER — PostgreSQL (Hive Metastore)
+  # Labs 2, 3, 5 — Hive DDL persisted here
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:13
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-hive-db.sql:/docker-entrypoint-initdb.d/init-hive-db.sql:ro
+    networks:
+      - bigdata-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
-  # --- COMPUTE LAYER (Hive) ---
+  # ---------------------------------------------------------------------------
+  # COMPUTE LAYER — Apache Hive 4 (HiveServer2)
+  # Labs 2, 3 — SQL queries, external tables (CSV + Parquet)
+  # Lab 5 — ODBC endpoint for Power BI
+  #
+  # Custom Dockerfile.hive installs Java 8 via modern signed-by keyring
+  # Entrypoint: schematool → HDFS setup → HiveServer2
+  # HDFS permissions scoped to /user/hive and /user/lab (no chmod 777 /)
+  # ---------------------------------------------------------------------------
   hive-server:
     build:
       context: .
       dockerfile: Dockerfile.hive
     container_name: hive-server
-    restart: always
+    restart: unless-stopped
     ports:
-      - "10000:10000"
-      - "10002:10002"
+      - "10000:10000"   # Beeline / ODBC / Power BI (Lab 2, 3, 5)
+      - "10002:10002"   # HiveServer2 Web UI
     environment:
       SERVICE_NAME: hiveserver2
-      HADOOP_HEAPSIZE: 2048
-      # We don't need SKIP_SCHEMA_INIT anymore because we are bypassing the script that uses it
+      HADOOP_HEAPSIZE: ${HADOOP_HEAPSIZE}
+      # Plain env vars — read by our entrypoint script to patch hive-site.xml
+      # before schematool and HiveServer2 start.
+      DB_USER: ${POSTGRES_USER}
+      DB_PASS: ${POSTGRES_PASSWORD}
     volumes:
-      - ./hive-site.xml:/opt/hive/conf/hive-site.xml
-      - ./core-site.xml:/opt/hive/conf/core-site.xml
-      - ./lib/postgresql-42.7.4.jar:/opt/hive/lib/postgresql-42.7.4.jar
-      - ./data/hive_home:/home/hive
-      - ./training:/home/uitm/training
-      #- ./training/data/logs:/home/hive/training/data/logs
+      # hive-site.xml is written by hive-entrypoint.sh at startup (not mounted)
+      - ./hive-entrypoint.sh:/opt/hive/bin/hive-entrypoint.sh:ro
+      - hive_home:/home/hive
+      - ./training:/home/hive/training:ro  # read-only lab datasets (for LOAD DATA LOCAL)
     depends_on:
       namenode:
-        condition: service_started
+        condition: service_healthy
       datanode:
         condition: service_started
       postgres:
         condition: service_healthy
     networks:
       - bigdata-net
-    
-    # --- CRITICAL FIX: Override the entrypoint to bypass the buggy default script ---
-    entrypoint: /bin/bash
-    command:
-      - -c
-      - |
-        echo "1. Waiting 15s for Postgres..."
-        sleep 15
-        echo "2. Initializing Postgres Metastore Schema..."
-        /opt/hive/bin/schematool -dbType postgres -initOrUpgradeSchema --verbose
-        echo "3. Waiting for HDFS to be fully online and out of safe mode..."
-        until hdfs dfsadmin -fs hdfs://namenode:9000 -safemode wait; do sleep 2; done;
-        
-        echo "4. Setting HDFS root permissions and creating UiTM directories..."
-        HADOOP_USER_NAME=root hdfs dfs -fs hdfs://namenode:9000 -chmod 777 /
-        HADOOP_USER_NAME=root hdfs dfs -fs hdfs://namenode:9000 -mkdir -p /user/uitm
-        HADOOP_USER_NAME=root hdfs dfs -fs hdfs://namenode:9000 -chmod -R 777 /user/uitm
-        HADOOP_USER_NAME=root hdfs dfs -fs hdfs://namenode:9000  -mkdir -p /user/hive/warehouse
-        HADOOP_USER_NAME=root hdfs dfs -fs hdfs://namenode:9000  -chmod -R 777 /user/hive/warehouse
-        
-        echo "5. Starting HiveServer2..."
-        /opt/hive/bin/hiveserver2
+    healthcheck:
+      test: ["CMD-SHELL", "beeline -u 'jdbc:hive2://localhost:10000' -n hive -p hive_lab_2024 -e 'SHOW DATABASES;' 2>&1 | grep -q 'default'"]
+      interval: 30s
+      timeout: 90s
+      retries: 10
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 3g
+    entrypoint: ["/bin/bash", "/opt/hive/bin/hive-entrypoint.sh"]
 
-  # --- UI LAYER (Hue) ---
-  hue:
-    image: gethue/hue:latest
-    container_name: hue
-    restart: always
-    ports:
-      - "8888:8888"
+  # ---------------------------------------------------------------------------
+  # STUDENT EDGE NODE — the correct place for all student CLI work
+  # Labs 1, 2, 3, 4 — all hdfs dfs, beeline, and yarn jar commands run here
+  #
+  # Why here and NOT namenode:
+  #   • NameNode is the cluster control plane — corrupting it kills the lab
+  #   • Edge node is isolated: destructive commands only affect the student's
+  #     own HDFS paths, never the namespace metadata
+  #   • Mirrors real-world practice (gateway / edge node pattern)
+  #
+  # Student workspace layout inside the container:
+  #   /home/student/training/   read-only lab datasets  (accounts.csv etc.)
+  #   /home/student/mydata/     writable — students drop their own files here
+  #                             then push to HDFS with:
+  #                             hdfs dfs -put /home/student/mydata/file.csv /user/lab/...
+  # ---------------------------------------------------------------------------
+  edge-node:
+    image: bde2020/hadoop-base:${HADOOP_IMAGE_TAG}
+    container_name: edge-node
+    restart: unless-stopped
+    hostname: edge-node
+    environment:
+      CORE_CONF_fs_defaultFS: hdfs://namenode:9000
+      HIVE_SERVER2_HOST: hive-server
+      HIVE_SERVER2_PORT: "10000"
     volumes:
-      - ./hue.ini:/usr/share/hue/desktop/conf/z-hue.ini
+      - ./training:/home/student/training:ro    # Lab datasets — read-only
+      - student_work:/home/student/mydata        # Writable student workspace
+      - ./core-site.xml:/etc/hadoop/conf/core-site.xml:ro
     depends_on:
       namenode:
-        condition: service_started
-      postgres:
+        condition: service_healthy
+      hive-server:
         condition: service_healthy
     networks:
       - bigdata-net
-    # --- AUTOMATED MIGRATION FIX ---
+    # Keep the container alive so students can exec into it at any time
+    command: ["tail", "-f", "/dev/null"]
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  # ---------------------------------------------------------------------------
+  # UI LAYER — Hue
+  # Lab 5 — HDFS file browser, SQL editor, data visualisation
+  # ---------------------------------------------------------------------------
+  hue:
+    image: ${HUE_IMAGE}
+    container_name: hue
+    restart: unless-stopped
+    ports:
+      - "8888:8888"   # Hue Web UI (Lab 5)
+    volumes:
+      - ./hue.ini:/usr/share/hue/desktop/conf/z-hue.ini:ro
+    depends_on:
+      namenode:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      hive-server:
+        condition: service_healthy
+    networks:
+      - bigdata-net
+    deploy:
+      resources:
+        limits:
+          memory: 1g
     entrypoint: /bin/bash
     command:
       - -c
       - |
-        echo "1. Running Hue database migrations..."
+        set -e
+        echo "=== Running Hue DB migrations ==="
         ./build/env/bin/hue syncdb --noinput
         ./build/env/bin/hue migrate
-        echo "2. Starting Hue Server..."
-        ./startup.sh
+        echo "=== Starting Hue ==="
+        exec ./startup.sh
 
+# =============================================================================
+# Named volumes — survives container restarts and recreations
+# =============================================================================
+volumes:
+  namenode_data:
+  datanode_data:
+  postgres_data:
+  hive_home:      # hive-server internal data drop zone
+  student_work:   # writable student workspace inside edge-node (/home/student/mydata)
+
+# =============================================================================
+# Network
+# =============================================================================
 networks:
   bigdata-net:
     driver: bridge

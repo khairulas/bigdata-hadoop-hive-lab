@@ -1,51 +1,115 @@
-<?xml version="1.0"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  hive-site.xml — HiveServer2 static configuration
+
+  CREDENTIALS ARE NOT HERE.
+  The apache/hive image writes HIVE_SITE_CONF_* environment variables into
+  hive-site.xml at container startup. Credentials are passed that way from
+  docker-compose.yml (which reads them from .env), so this file never
+  contains secrets and is safe to commit to version control.
+
+  Env var naming convention used by apache/hive entrypoint:
+    HIVE_SITE_CONF_<key>   where dots become _ and _ becomes __
+    e.g. javax.jdo.option.ConnectionUserName
+      -> HIVE_SITE_CONF_javax_jdo_option_ConnectionUserName
+-->
 <configuration>
-    <property>
-        <name>javax.jdo.option.ConnectionURL</name>
-        <value>jdbc:postgresql://postgres:5432/metastore</value>
-    </property>
-    <property>
-        <name>javax.jdo.option.ConnectionDriverName</name>
-        <value>org.postgresql.Driver</value>
-    </property>
-    <property>
-        <name>javax.jdo.option.ConnectionUserName</name>
-        <value>hive</value>
-    </property>
-    <property>
-        <name>javax.jdo.option.ConnectionPassword</name>
-        <value>hive</value>
-    </property>
-    
-    <property>
-        <name>fs.defaultFS</name>
-        <value>hdfs://namenode:9000</value>
-    </property>
-    <property>
-        <name>hive.metastore.warehouse.dir</name>
-        <value>/user/hive/warehouse</value>
-    </property>
 
-    <property>
-        <name>hive.server2.enable.doAs</name>
-        <value>false</value>
-    </property>
+  <!-- =====================================================================
+       Metastore JDBC — driver and URL (non-secret; safe to store here)
+       User and Password are injected via HIVE_SITE_CONF_* env vars.
+       ===================================================================== -->
+  <property>
+    <name>javax.jdo.option.ConnectionURL</name>
+    <value>jdbc:postgresql://postgres:5432/metastore</value>
+  </property>
 
-    <property>
-        <name>hive.support.concurrency</name>
-        <value>true</value>
-    </property>
-    <property>
-        <name>hive.txn.manager</name>
-        <value>org.apache.hadoop.hive.ql.lockmgr.DbTxnManager</value>
-    </property>
-    <property>
-        <name>hive.compactor.initiator.on</name>
-        <value>true</value>
-    </property>
-    <property>
-        <name>hive.enforce.bucketing</name>
-        <value>true</value>
-    </property>
+  <property>
+    <name>javax.jdo.option.ConnectionDriverName</name>
+    <value>org.postgresql.Driver</value>
+  </property>
+
+  <!-- =====================================================================
+       HDFS — must match namenode service name in docker-compose.yml
+       ===================================================================== -->
+  <property>
+    <name>fs.defaultFS</name>
+    <value>hdfs://namenode:9000</value>
+  </property>
+
+  <!-- =====================================================================
+       Hive Warehouse — where managed table data lives in HDFS
+       ===================================================================== -->
+  <property>
+    <name>hive.metastore.warehouse.dir</name>
+    <value>hdfs://namenode:9000/user/hive/warehouse</value>
+  </property>
+
+  <!-- =====================================================================
+       Lab 5 — disable Kerberos impersonation (not used in this lab)
+       ===================================================================== -->
+  <property>
+    <name>hive.server2.enable.doAs</name>
+    <value>false</value>
+  </property>
+
+  <!-- =====================================================================
+       Transactions — required for INSERT INTO on Parquet tables (Lab 5 Ex6)
+       ===================================================================== -->
+  <property>
+    <name>hive.support.concurrency</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>hive.txn.manager</name>
+    <value>org.apache.hadoop.hive.ql.lockmgr.DbTxnManager</value>
+  </property>
+
+  <property>
+    <name>hive.compactor.initiator.on</name>
+    <value>true</value>
+  </property>
+
+  <property>
+    <name>hive.compactor.worker.threads</name>
+    <value>1</value>
+  </property>
+
+  <!-- =====================================================================
+       Execution engine — MapReduce (Labs 2 & 4 use yarn jar directly;
+       Hive queries in Lab 5 also submit via MR for consistency with the
+       bde2020 Hadoop 3.2.1 cluster)
+       ===================================================================== -->
+  <property>
+    <name>hive.execution.engine</name>
+    <value>mr</value>
+  </property>
+
+  <!-- =====================================================================
+       HiveServer2 Thrift endpoint — used by Beeline and Hue (Lab 5)
+       ===================================================================== -->
+  <property>
+    <name>hive.server2.thrift.port</name>
+    <value>10000</value>
+  </property>
+
+  <property>
+    <name>hive.server2.thrift.bind.host</name>
+    <value>0.0.0.0</value>
+  </property>
+
+  <!-- Cleaner column names in Hue result sets -->
+  <property>
+    <name>hive.resultset.use.unique.column.names</name>
+    <value>false</value>
+  </property>
+
+  <!-- Validate metastore schema on startup — catches version mismatches early -->
+  <property>
+    <name>hive.metastore.schema.verification</name>
+    <value>true</value>
+  </property>
+
 </configuration>

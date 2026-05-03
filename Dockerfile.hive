@@ -1,18 +1,40 @@
-# Start from the official Hive image
+# =============================================================================
+# Dockerfile.hive — Custom HiveServer2 image
+#
+# Base : apache/hive:4.0.0  (ships with Java 17)
+#
+# Why Java 8 was removed
+# -----------------------
+# The original design installed Temurin Java 8 to match the bde2020 Hadoop
+# images. However:
+#   1. apache/hive:4.0.0 is designed for Java 17 and works correctly with
+#      Hadoop 3.2.1 over the network (HDFS/YARN APIs are wire-compatible).
+#   2. All student MapReduce compilation and yarn jar submission now runs
+#      inside edge-node, which is bde2020/hadoop-base (already Java 8).
+#   3. Installing Temurin via apt on Bullseye requires a GPG key that
+#      intermittently fails signature verification, making the build
+#      unreliable. Removing it eliminates the problem entirely.
+#
+# What this Dockerfile does
+# --------------------------
+#   • Copies the PostgreSQL JDBC driver into /opt/hive/lib/ so HiveServer2
+#     can connect to the metastore database.
+#   • Ensures the hive user owns its config directory.
+#
+# The lib/ directory must contain postgresql-42.7.4.jar on the host.
+# Run setup.sh once before docker-compose up to check for this file.
+# =============================================================================
+
 FROM apache/hive:4.0.0
 
-# Switch to the root user to install software
 USER root
 
-# 1. Install wget and gnupg (needed to securely add new repositories)
-RUN apt-get update && apt-get install -y wget gnupg
+# Copy the PostgreSQL JDBC driver (must be present in ./lib/ on the host).
+# This avoids downloading it at runtime and keeps the build reproducible.
+COPY lib/postgresql-42.7.4.jar /opt/hive/lib/postgresql-42.7.4.jar
 
-# 2. Add the Eclipse Temurin repository (The industry standard for Java 8)
-RUN wget -qO - https://packages.adoptium.net/artifactory/api/gpg/key/public | apt-key add - \
-    && echo "deb https://packages.adoptium.net/artifactory/deb bullseye main" > /etc/apt/sources.list.d/adoptium.list
+RUN chown hive:hive /opt/hive/lib/postgresql-42.7.4.jar
+RUN chown -R hive:hive /opt/hive/conf
 
-# 3. Install the Java 8 JDK
-RUN apt-get update && apt-get install -y temurin-8-jdk
-
-# Switch back to the standard 'hive' user
+# Drop privileges — all runtime operations run as the hive user
 USER hive

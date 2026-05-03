@@ -1,8 +1,34 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  core-site.xml — Hadoop core configuration (used by hive-server container)
+
+  fs.defaultFS      — canonical HDFS endpoint for Hive and HDFS client calls
+  proxy-user rules  — allow Hue to impersonate any user for HDFS browsing (Lab 5)
+  WebHDFS           — required for Hue file browser
+-->
 <configuration>
-    <property>
-        <name>fs.defaultFS</name>
-        <value>hdfs://namenode:9000</value>
-    </property>
+
+  <property>
+    <n>fs.defaultFS</n>
+    <value>hdfs://namenode:9000</value>
+  </property>
+
+  <!-- Allow Hue's server process to proxy-user on behalf of logged-in students -->
+  <property>
+    <n>hadoop.proxyuser.hue.hosts</n>
+    <value>*</value>
+  </property>
+
+  <property>
+    <n>hadoop.proxyuser.hue.groups</n>
+    <value>*</value>
+  </property>
+
+  <!-- WebHDFS must be enabled for Hue file browser (Lab 5) -->
+  <property>
+    <n>dfs.webhdfs.enabled</n>
+    <value>true</value>
+  </property>
+
 </configuration>
