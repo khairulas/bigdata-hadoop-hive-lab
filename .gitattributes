@@ -1,4 +1,4 @@
-﻿# Enforce LF line endings for all text files — prevents CRLF breaking bash inside Linux containers
+﻿# Enforce LF line endings for all text files
 *.sh        text eol=lf
 *.sql       text eol=lf
 *.xml       text eol=lf
@@ -10,7 +10,7 @@
 *.json      text eol=lf
 *.csv       text eol=lf
 
-# Binary files — do not mangle line endings
+# Binary files - do not mangle
 *.jar       binary
 *.docx      binary
 *.png       binary
