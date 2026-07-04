@@ -29,3 +29,6 @@ __pycache__/
 *~
 *.bak
 "docker-compose copy.yml"
+
+# JDBC driver (downloaded manually per README)
+lib/
