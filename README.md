@@ -18,7 +18,7 @@
 | `hue` | gethue/hue:4.11.0 | Web UI for HDFS & Hive |
 | `edge-node` | bde2020/hadoop-base:2.0.0-hadoop3.2.1-java8 | **Student workspace** |
 
-> **Key architectural principle:** Students do all CLI work from `edge-node`, not from `namenode` or `resourcemanager`. See [Why the Edge Node?](#-why-the-edge-node) below.
+> **Key architectural principle:** Students do all CLI work from `edge-node`, not from `namenode` or `resourcemanager`. See [Why the Edge Node?](#️-why-the-edge-node) below.
 
 ---
 
@@ -179,6 +179,7 @@ hdfs dfs -put /home/student/mydata/accounts.csv /user/uitm/hd_data/
 /user/uitm/data/weblog        ← Lab 4 log file analysis
 /user/uitm/data/exercise/     ← MapReduce job output
 /user/uitm/data/movie_review_output
+/user/uitm/staging            ← temporary staging for LOAD DATA INPATH
 ```
 
 ---
@@ -234,8 +235,8 @@ hdfs dfs -cat /user/uitm/data/exercise/wordcount/part-r-00000 | head -n 20
 # On your HOST machine — edit block size config
 docker cp namenode:/opt/hadoop-3.2.1/etc/hadoop/hdfs-site.xml ./hdfs-site.xml
 # (edit hdfs-site.xml — add dfs.blocksize=268435456)
-docker cp ./hdfs-site.xml namenode:/opt/hadoop-3.2.1/etc/hadoop/hdfs-site.xml
-docker restart namenode datanode
+docker cp ./hdfs-site.xml edge-node:/opt/hadoop-3.2.1/etc/hadoop/hdfs-site.xml
+docker restart namenode datanode edge-node
 ```
 
 ```bash
@@ -269,22 +270,27 @@ Monitor jobs at http://localhost:8088.
 
 Open two PowerShell terminals side by side:
 
-**Terminal 1 — HDFS Admin:**
+**Terminal 1 — HDFS Admin (edge-node):**
 ```powershell
 docker exec -it edge-node bash
-# Run hdfs dfs commands here
 ```
 
-**Terminal 2 — Hive SQL Analyst:**
+**Terminal 2 — Hive SQL Analyst (Beeline):**
 ```powershell
 docker exec -it hive-server beeline -u jdbc:hive2://localhost:10000 -n hive -p hive_lab_2024
 ```
 
-Example — create a database and external table:
-```sql
-CREATE DATABASE uitm_db;
-USE uitm_db;
+#### Loading Data into Hive — Important Architecture Note
 
+> ⚠️ **`LOAD DATA LOCAL` does not work in this setup.**  
+> `LOCAL` reads from the filesystem of the **hive-server** container, which does not have the training data mounted. Always load data via HDFS from `edge-node` (Terminal 1).
+
+**External Table — push file to HDFS, no LOAD needed:**
+
+The `LOCATION` clause in `CREATE EXTERNAL TABLE` points Hive directly at an HDFS directory. Any file placed there is immediately queryable — no `LOAD DATA` command is required.
+
+```sql
+-- Terminal 2: create the external table
 CREATE EXTERNAL TABLE ratings (
   userid  int,
   movieid int,
@@ -294,9 +300,40 @@ CREATE EXTERNAL TABLE ratings (
 ROW FORMAT DELIMITED
 FIELDS TERMINATED BY ','
 LOCATION '/user/uitm/data/ratings';
+```
 
-LOAD DATA LOCAL INPATH '/home/uitm/training/data/ratings.csv' INTO TABLE ratings;
+```bash
+# Terminal 1 (edge-node): push the file to the LOCATION path
+hdfs dfs -put /home/student/training/data/ratings.csv /user/uitm/data/ratings/
+hdfs dfs -ls /user/uitm/data/ratings/
+```
+
+```sql
+-- Terminal 2: data is immediately available
 SELECT * FROM ratings LIMIT 10;
+```
+
+**Managed Table — upload to staging first, then LOAD from HDFS:**
+
+```bash
+# Terminal 1 (edge-node): upload to a staging directory
+hdfs dfs -mkdir -p /user/uitm/staging
+hdfs dfs -put /home/student/training/data/ratings.csv /user/uitm/staging/ratings.csv
+```
+
+```sql
+-- Terminal 2: create and load the managed table (no LOCAL keyword)
+CREATE TABLE ratings_managed (
+  userid  int,
+  movieid int,
+  rating  int,
+  tstamp  string
+)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ',';
+
+LOAD DATA INPATH '/user/uitm/staging/ratings.csv' INTO TABLE ratings_managed;
+SELECT * FROM ratings_managed LIMIT 10;
 ```
 
 ---
@@ -386,6 +423,7 @@ Download and install the **Microsoft Hive ODBC Driver (64-bit)** from the Micros
 bigdata-hadoop-hive-lab/
 ├── .env                      ← secrets & image versions (not committed)
 ├── .env.example              ← template for .env
+├── .gitattributes            ← enforces LF line endings for .sh files
 ├── .gitignore
 ├── docker-compose.yml        ← full 8-service stack definition
 ├── Dockerfile.hive           ← custom hive-server image (adds JDBC driver)
@@ -393,7 +431,7 @@ bigdata-hadoop-hive-lab/
 ├── hive-site.xml             ← static Hive config (no credentials)
 ├── core-site.xml             ← Hadoop core config (proxy-user, WebHDFS)
 ├── hue.ini                   ← Hue web UI configuration
-├── init-hive-db.sql          ← creates metastore + hue databases in Postgres
+├── init-hive-db.sql          ← idempotent: creates metastore + hue databases in Postgres
 ├── lib/
 │   └── postgresql-42.7.4.jar ← JDBC driver (download via setup instructions)
 ├── training/
@@ -405,7 +443,7 @@ bigdata-hadoop-hive-lab/
 │       └── logs/
 │           └── 2014-01-12.log
 └── labs/
-    └── DSC650_Lab_Module_Updated.docx
+    └── DSC650_Lab_Module_Lab1-5.docx
 ```
 
 ---
@@ -430,6 +468,21 @@ hdfs dfsadmin -fs hdfs://namenode:9000 -safemode leave
 **Beeline connection refused:**
 HiveServer2 may still be initialising. Wait 90 seconds from first `docker-compose up`, then retry. Check `docker logs hive-server` to confirm step `[5/5] Starting HiveServer2` has completed.
 
+**Hue shows "database does not exist" on first run:**
+This is prevented by the updated `init-hive-db.sql` which creates both the `metastore` and `hue` databases idempotently. If you cloned before this fix, do a full reset:
+```powershell
+docker-compose down -v
+docker-compose up -d
+```
+
+**Shell script errors (`$'\r': command not found`) inside containers:**
+Caused by Windows CRLF line endings in `.sh` files. The repo includes a `.gitattributes` file that enforces LF on clone. If you edited scripts on Windows and see this error, fix with PowerShell:
+```powershell
+(Get-Content .\hive-entrypoint.sh -Raw) -replace "`r`n", "`n" |
+  Set-Content .\hive-entrypoint.sh -NoNewline
+```
+Then rebuild: `docker-compose up -d --build hive-server`
+
 **Full reset (wipe all data and start fresh):**
 ```powershell
 docker-compose down -v
@@ -445,6 +498,9 @@ Open Docker Desktop from the Start menu and wait for it to fully start. If it sh
 
 - **Credentials** are stored only in `.env` and injected into containers at runtime. No passwords exist in any XML or YAML file.
 - **hive-site.xml** is written dynamically by `hive-entrypoint.sh` at container startup using environment variables — this bypasses a Hive 4.0 limitation where `${env.X}` XML substitution does not work when a custom entrypoint is used.
+- **init-hive-db.sql** uses idempotent `IF NOT EXISTS` guards for both the role and both databases — safe to re-run and safe on fresh installs with empty volumes.
+- **`LOAD DATA LOCAL` is unsupported** in this architecture. The training datasets live on `edge-node`; the Hive engine runs in `hive-server`. Always use `hdfs dfs -put` from `edge-node` to stage files, then `LOAD DATA INPATH` (without `LOCAL`) or rely on `LOCATION` for external tables.
 - **HDFS permissions** are scoped to `/user/uitm/` and `/user/hive/warehouse` only — no `chmod 777 /` on the root.
 - **Image versions** are pinned in `.env` to prevent unexpected breakage from upstream updates.
 - **Named Docker volumes** (`namenode_data`, `datanode_data`, `postgres_data`, `hive_home`, `student_work`) persist data across container restarts. Use `docker-compose down -v` only when you want a complete reset.
+- **Line endings** — `.gitattributes` enforces `eol=lf` for all `.sh` files, preventing Windows from re-introducing CRLF on clone or checkout.

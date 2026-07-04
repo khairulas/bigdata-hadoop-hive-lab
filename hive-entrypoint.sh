@@ -92,7 +92,7 @@ EOF
 echo "    hive-site.xml written — metastore user: ${DB_USER}"
 
 echo "=== [1/5] Initialising Hive Metastore schema in PostgreSQL ==="
-/opt/hive/bin/schematool -dbType postgres -initOrUpgradeSchema --verbose
+/opt/hive/bin/schematool -dbType postgres -initOrUpgradeSchema -verbose
 
 echo "=== [2/5] Waiting for HDFS to exit Safe Mode ==="
 until hdfs dfsadmin -fs hdfs://namenode:9000 -safemode wait; do
