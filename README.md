@@ -33,25 +33,47 @@
 
 ## 📥 Installation
 
-### 1. Clone the Repository
+> ⚠️ **Complete all four steps below before running `docker-compose up`.** Skipping any step will cause the stack to fail.
+
+### Step 1: Clone the Repository
 
 ```powershell
 git clone https://github.com/khairulas/bigdata-hadoop-hive-lab.git
 cd bigdata-hadoop-hive-lab
 ```
 
-### 2. Download the PostgreSQL JDBC Driver
+### Step 2: Download the Training Datasets
+
+The lab datasets (~70 MB) are distributed as a GitHub Release asset and are not stored in the repository.
+
+```powershell
+.\setup-data.ps1
+```
+
+This script downloads `training-data.zip` from the GitHub Releases page and extracts it into `training/data/` automatically. When it completes you should see:
+
+```
+Done. Training data is ready at training/data/
+```
+
+Verify:
+```powershell
+dir training\data
+```
+
+You should see `accounts.csv`, `ratings.csv`, `movies.txt`, `logs\`, and other dataset files.
+
+### Step 3: Download the PostgreSQL JDBC Driver
 
 The Hive image requires the PostgreSQL JDBC driver to connect to its metastore. Download it once before the first build:
 
 ```powershell
-# PowerShell
 New-Item -ItemType Directory -Force -Path lib
 Invoke-WebRequest -Uri "https://jdbc.postgresql.org/download/postgresql-42.7.4.jar" `
   -OutFile "lib\postgresql-42.7.4.jar"
 ```
 
-### 3. Configure Environment Variables
+### Step 4: Configure Environment Variables
 
 Copy the example environment file and review the defaults:
 
@@ -149,7 +171,7 @@ Inside `edge-node`:
 
 ```
 /home/student/
-├── training/          ← read-only lab datasets (accounts.csv, movies.txt, etc.)
+├── training/          ← read-only lab datasets (populated by setup-data.ps1)
 │   └── data/
 │       ├── accounts.csv
 │       ├── movies.txt
@@ -423,8 +445,9 @@ Download and install the **Microsoft Hive ODBC Driver (64-bit)** from the Micros
 bigdata-hadoop-hive-lab/
 ├── .env                      ← secrets & image versions (not committed)
 ├── .env.example              ← template for .env
-├── .gitattributes            ← enforces LF line endings for .sh files
+├── .gitattributes            ← enforces LF line endings for all text files
 ├── .gitignore
+├── setup-data.ps1            ← downloads training datasets from GitHub Release
 ├── docker-compose.yml        ← full 8-service stack definition
 ├── Dockerfile.hive           ← custom hive-server image (adds JDBC driver)
 ├── hive-entrypoint.sh        ← startup script: writes hive-site.xml, schematool, HDFS dirs
@@ -433,13 +456,13 @@ bigdata-hadoop-hive-lab/
 ├── hue.ini                   ← Hue web UI configuration
 ├── init-hive-db.sql          ← idempotent: creates metastore + hue databases in Postgres
 ├── lib/
-│   └── postgresql-42.7.4.jar ← JDBC driver (download via setup instructions)
+│   └── postgresql-42.7.4.jar ← JDBC driver (download via Step 3 above — not in repo)
 ├── training/
-│   └── data/                 ← lab datasets (mounted read-only into edge-node)
+│   └── data/                 ← lab datasets (download via setup-data.ps1 — not in repo)
 │       ├── accounts.csv
+│       ├── ratings.csv
 │       ├── movies.txt
 │       ├── employees.json
-│       ├── ratings.csv
 │       └── logs/
 │           └── 2014-01-12.log
 └── labs/
@@ -449,6 +472,33 @@ bigdata-hadoop-hive-lab/
 ---
 
 ## ❓ Troubleshooting
+
+**Training data missing (`/home/student/training/data` is empty):**
+The datasets are not stored in the repository — they are downloaded separately. Run `setup-data.ps1` from the repo root before starting the cluster:
+```powershell
+.\setup-data.ps1
+```
+Then restart the stack so edge-node picks up the newly populated volume:
+```powershell
+docker-compose down
+docker-compose up -d
+```
+
+**`docker-compose up` fails with `lib/postgresql-42.7.4.jar: not found`:**
+The JDBC driver must be downloaded manually before the first build. Run Step 3 of the installation:
+```powershell
+New-Item -ItemType Directory -Force -Path lib
+Invoke-WebRequest -Uri "https://jdbc.postgresql.org/download/postgresql-42.7.4.jar" `
+  -OutFile "lib\postgresql-42.7.4.jar"
+```
+Then retry `docker-compose up -d`.
+
+**All environment variables blank (`variable is not set`):**
+The `.env` file is missing. Run Step 4 of the installation:
+```powershell
+copy .env.example .env
+```
+Then retry `docker-compose up -d`.
 
 **`hive-server` shows Error or unhealthy:**
 ```powershell
@@ -469,14 +519,14 @@ hdfs dfsadmin -fs hdfs://namenode:9000 -safemode leave
 HiveServer2 may still be initialising. Wait 90 seconds from first `docker-compose up`, then retry. Check `docker logs hive-server` to confirm step `[5/5] Starting HiveServer2` has completed.
 
 **Hue shows "database does not exist" on first run:**
-This is prevented by the updated `init-hive-db.sql` which creates both the `metastore` and `hue` databases idempotently. If you cloned before this fix, do a full reset:
+This is prevented by the updated `init-hive-db.sql`. If you cloned before this fix, do a full reset:
 ```powershell
 docker-compose down -v
 docker-compose up -d
 ```
 
 **Shell script errors (`$'\r': command not found`) inside containers:**
-Caused by Windows CRLF line endings in `.sh` files. The repo includes a `.gitattributes` file that enforces LF on clone. If you edited scripts on Windows and see this error, fix with PowerShell:
+Caused by Windows CRLF line endings in `.sh` files. The repo `.gitattributes` enforces LF on clone. If you edited scripts on Windows and see this error, fix with PowerShell:
 ```powershell
 (Get-Content .\hive-entrypoint.sh -Raw) -replace "`r`n", "`n" |
   Set-Content .\hive-entrypoint.sh -NoNewline
@@ -500,7 +550,8 @@ Open Docker Desktop from the Start menu and wait for it to fully start. If it sh
 - **hive-site.xml** is written dynamically by `hive-entrypoint.sh` at container startup using environment variables — this bypasses a Hive 4.0 limitation where `${env.X}` XML substitution does not work when a custom entrypoint is used.
 - **init-hive-db.sql** uses idempotent `IF NOT EXISTS` guards for both the role and both databases — safe to re-run and safe on fresh installs with empty volumes.
 - **`LOAD DATA LOCAL` is unsupported** in this architecture. The training datasets live on `edge-node`; the Hive engine runs in `hive-server`. Always use `hdfs dfs -put` from `edge-node` to stage files, then `LOAD DATA INPATH` (without `LOCAL`) or rely on `LOCATION` for external tables.
+- **Training datasets** (~70 MB total) are distributed as a GitHub Release asset (`training-data.zip`) and downloaded by `setup-data.ps1`. They are excluded from the repository to keep clone size small.
 - **HDFS permissions** are scoped to `/user/uitm/` and `/user/hive/warehouse` only — no `chmod 777 /` on the root.
 - **Image versions** are pinned in `.env` to prevent unexpected breakage from upstream updates.
 - **Named Docker volumes** (`namenode_data`, `datanode_data`, `postgres_data`, `hive_home`, `student_work`) persist data across container restarts. Use `docker-compose down -v` only when you want a complete reset.
-- **Line endings** — `.gitattributes` enforces `eol=lf` for all `.sh` files, preventing Windows from re-introducing CRLF on clone or checkout.
+- **Line endings** — `.gitattributes` enforces `eol=lf` for all text and script files, preventing Windows from re-introducing CRLF on clone or checkout.
