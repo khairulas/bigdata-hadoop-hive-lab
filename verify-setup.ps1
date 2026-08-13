@@ -17,6 +17,17 @@ function Meh ($m) {
     $script:warn++
 }
 
+# wsl.exe emits UTF-16LE, which arrives with null bytes between
+# characters. Strip them or no regex will ever match.
+function WslText ($cmdArgs) {
+    try {
+        $raw = & wsl.exe @cmdArgs 2>&1 | Out-String
+        return ($raw -replace "`0", "")
+    } catch {
+        return ""
+    }
+}
+
 Write-Host ""
 Write-Host "=== DSC650 Workshop Environment Check ===" -ForegroundColor Cyan
 Write-Host ""
@@ -30,44 +41,40 @@ else { Bad "Windows build $build - need 19041 or later" }
 # Note: newer WSL builds no longer print "Default Version" in --status,
 # so we check the version banner and the per-distro table instead.
 $wslOk = $false
-try {
-    $wslVer = (wsl --version 2>&1 | Out-String)
-    if ($wslVer -match "WSL version:\s*(\d+)") {
-        if ([int]$Matches[1] -ge 2) {
-            Ok "WSL $($Matches[0] -replace 'WSL version:\s*','') installed"
-            $wslOk = $true
-        }
+
+$wslVer = WslText @("--version")
+if ($wslVer -match "WSL version:\s*([\d\.]+)") {
+    $v = $Matches[1]
+    if ([int]($v -split "\.")[0] -ge 2) {
+        Ok "WSL version $v installed"
+        $wslOk = $true
+    } else {
+        Bad "WSL version $v - run: wsl --set-default-version 2"
     }
-} catch { }
+}
 
 if (-not $wslOk) {
-    try {
-        $st = (wsl --status 2>&1 | Out-String)
-        if ($st -match "not installed") {
-            Bad "WSL not installed - run: wsl --install --no-distribution"
-        }
-        elseif ($st -match "Default Version:\s*2") {
-            Ok "WSL 2 is the default version"
-            $wslOk = $true
-        }
-        elseif ($st -match "Default Version:\s*1") {
-            Bad "WSL on version 1 - run: wsl --set-default-version 2"
-        }
-        else {
-            Meh "WSL present but version could not be confirmed"
-        }
-    } catch {
+    $st = WslText @("--status")
+    if ($st -match "not installed" -or $st -eq "") {
         Bad "WSL not installed - run: wsl --install --no-distribution"
+    }
+    elseif ($st -match "Default Version:\s*2") {
+        Ok "WSL 2 is the default version"
+        $wslOk = $true
+    }
+    elseif ($st -match "Default Version:\s*1") {
+        Bad "WSL on version 1 - run: wsl --set-default-version 2"
+    }
+    else {
+        Meh "WSL present but version could not be confirmed"
     }
 }
 
 # ---- 3. Any WSL 1 distros still around? ------------------------------
-try {
-    $distros = (wsl -l -v 2>&1 | Out-String)
-    if ($distros -match "\s1\s*$") {
-        Meh "A WSL 1 distro exists - Docker needs WSL 2 distros"
-    }
-} catch { }
+$distros = WslText @("-l", "-v")
+if ($distros -match "(?m)\s1\s*$") {
+    Meh "A WSL 1 distro exists - Docker needs WSL 2 distros"
+}
 
 # ---- 4. Docker CLI ---------------------------------------------------
 $dockerCli = $false
