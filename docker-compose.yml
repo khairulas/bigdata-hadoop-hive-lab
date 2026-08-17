@@ -280,9 +280,17 @@ services:
     restart: unless-stopped
     hostname: edge-node
     environment:
-      CORE_CONF_fs_defaultFS: hdfs://namenode:9000
-      HIVE_SERVER2_HOST: hive-server
-      HIVE_SERVER2_PORT: "10000"
+          CORE_CONF_fs_defaultFS: hdfs://namenode:9000
+          HIVE_SERVER2_HOST: hive-server
+          HIVE_SERVER2_PORT: "10000"
+          MAPRED_CONF_mapreduce_framework_name: yarn
+          YARN_CONF_yarn_resourcemanager_hostname: resourcemanager
+          YARN_CONF_yarn_resourcemanager_address: resourcemanager:8032
+          YARN_CONF_yarn_resourcemanager_scheduler_address: resourcemanager:8030
+          YARN_CONF_yarn_resourcemanager_resource__tracker_address: resourcemanager:8031
+          MAPRED_CONF_yarn_app_mapreduce_am_env: HADOOP_MAPRED_HOME=/opt/hadoop-3.2.1
+          MAPRED_CONF_mapreduce_map_env: HADOOP_MAPRED_HOME=/opt/hadoop-3.2.1
+          MAPRED_CONF_mapreduce_reduce_env: HADOOP_MAPRED_HOME=/opt/hadoop-3.2.1
     volumes:
       - ./training:/home/student/training:ro    # Lab datasets — read-only
       - student_work:/home/student/mydata        # Writable student workspace

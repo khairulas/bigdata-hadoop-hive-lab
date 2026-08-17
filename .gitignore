@@ -41,3 +41,13 @@ __pycache__/
 # JDBC driver (downloaded manually per README)
 lib/
 
+
+# Docker runtime volume data - never commit
+data/
+hive_data/
+namenode_data/
+datanode_data/
+postgres_data/
+
+# Release asset - distributed via GitHub Releases
+training-data.zip
